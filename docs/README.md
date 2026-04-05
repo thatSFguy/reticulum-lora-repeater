@@ -8,15 +8,24 @@ connect a flashed node over USB, read its runtime status, edit the
 persistent Config, and calibrate the battery ADC — all without a
 PlatformIO install or a local serial monitor.
 
+## Supported boards (v0.1)
+
+| Board                     | Radio module          | Status                               |
+|---------------------------|-----------------------|--------------------------------------|
+| **Faketec** (Nice!Nano + Ebyte E22-900M30S) | SX1262 + ext PA | Bench-validated end-to-end |
+| **RAK4631** (WisBlock Core)                 | Integrated SX1262  | Builds green, hardware validation pending (see `docs/RATCHET_PROTOCOL.md` / `include/board/rak4631.h`) |
+
+More boards in the roadmap (XIAO nRF52840, etc). The webflasher's
+version + board dropdowns are populated from the per-release manifest,
+so any board the CI matrix builds automatically shows up here.
+
 ## What works today (Phase 6a + 6b)
 
 - **Flash firmware over Web Serial** directly to the Adafruit nRF52
-  bootloader (SLIP-framed Nordic legacy DFU). Drop in a
-  `firmware.zip` (`pio run -e Faketec` builds one at
-  `.pio/build/Faketec/firmware.zip`), click Flash, pick the
-  bootloader port in the picker. Wire format is documented
-  byte-for-byte in `DFU_PROTOCOL.md`; the implementation lives in
-  `dfu.js`.
+  bootloader (SLIP-framed Nordic legacy DFU). Pick a version from the
+  release dropdown — no toolchain install needed. Wire format is
+  documented byte-for-byte in `DFU_PROTOCOL.md`; the implementation
+  lives in `dfu.js`.
 - Read live `STATUS` (uptime, radio state, packet counters, battery
   raw/scaled readings, display name).
 - Read the full persistent `CONFIG GET` into an editable form.

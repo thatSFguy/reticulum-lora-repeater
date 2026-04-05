@@ -35,8 +35,8 @@ jobs:
       matrix:
         board:
           - Faketec
-          # Phase 7 adds:
-          # - RAK4631
+          - RAK4631
+          # Phase 7 completion for v0.2:
           # - XIAO_nRF52840
 
     steps:
