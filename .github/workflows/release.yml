@@ -17,6 +17,14 @@ on:
 permissions:
   contents: write      # softprops/action-gh-release needs to create/update releases
 
+# Opt into Node.js 24 for JavaScript-based actions now rather than
+# waiting for GitHub's June 2026 forced migration. Silences the
+# "Node.js 20 actions are deprecated" warning and future-proofs the
+# workflow without requiring us to pin to unreleased action versions.
+# See https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     name: Build ${{ matrix.board }}
