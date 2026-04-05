@@ -35,13 +35,24 @@ bool init_hardware() {
     s_lora.setPins(PIN_LORA_NSS, PIN_LORA_RESET, PIN_LORA_DIO1,
                    PIN_LORA_BUSY, PIN_LORA_RXEN);
 
-    // 3. Probe the chip. preInit() resets the radio, begins SPI,
-    //    and reads the sync-word register in a 2-second retry loop
-    //    to confirm the chip is responding. Returns false if the
-    //    chip never shows up — usually a wiring, power, or TCXO
-    //    voltage problem (see docs/TROUBLESHOOTING.md).
+    // 3. Hardware-reset the SX1262 BEFORE probing its registers.
+    //    Some modules (notably the Seeed Wio-SX1262) come out of cold
+    //    power-on in a state where the sync-word register reads back
+    //    garbage and doesn't return to the datasheet default until an
+    //    explicit reset pulse is applied. The Ebyte E22-900M30S on
+    //    Faketec is tolerant of skipping this step, which is why the
+    //    original port bring-up did not catch the omission. RadioLib
+    //    (used by Meshtastic) always does reset-before-probe; we
+    //    match that ordering here so every supported module works
+    //    from the first init_hardware() call.
+    s_lora.reset();
+
+    // 4. Probe the chip. preInit() begins SPI (with optional pin
+    //    override) and reads the sync-word register in a 2-second
+    //    retry loop to confirm the chip is responding.
     if (!s_lora.preInit()) {
         Serial.println("Radio: preInit() failed — SX1262 did not respond");
+        Serial.println("Radio: check RADIO_SPI_OVERRIDE_PINS, PIN_LORA_*, and VEXT rail");
         return false;
     }
 
