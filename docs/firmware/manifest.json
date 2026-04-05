@@ -1,6 +1,26 @@
 {
-  "generated_at": "2026-04-05T22:00:50+00:00",
+  "generated_at": "2026-04-05T22:18:12+00:00",
   "releases": [
+    {
+      "tag": "v0.1.1",
+      "prerelease": false,
+      "boards": [
+        {
+          "name": "Faketec",
+          "hex_path": "firmware/v0.1.1/reticulum-lora-repeater-Faketec-v0.1.1.hex",
+          "hex_size": 1746172,
+          "zip_path": "firmware/v0.1.1/reticulum-lora-repeater-Faketec-v0.1.1.zip",
+          "zip_size": 621586
+        },
+        {
+          "name": "RAK4631",
+          "hex_path": "firmware/v0.1.1/reticulum-lora-repeater-RAK4631-v0.1.1.hex",
+          "hex_size": 1745452,
+          "zip_path": "firmware/v0.1.1/reticulum-lora-repeater-RAK4631-v0.1.1.zip",
+          "zip_size": 621331
+        }
+      ]
+    },
     {
       "tag": "v0.1.0",
       "prerelease": false,
