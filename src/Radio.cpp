@@ -192,16 +192,82 @@ int read_pending(uint8_t* buf, size_t bufsize) {
 
     size_t len = s_radio.getPacketLength();
     if (len == 0 || len > bufsize) {
-        // Bad length — re-enter RX anyway so we don't get stuck.
-        s_radio.startReceive();
+        // Bad length — log it (bad-length packets are a symptom of
+        // marginal reception or RX pipeline corruption) and re-enter
+        // RX anyway so we don't get stuck.
+        Serial.print("Radio: RX bad-length len=");
+        Serial.println(len);
+        int sr = s_radio.startReceive();
+        if (sr != RADIOLIB_ERR_NONE) {
+            Serial.print("Radio: startReceive() failed after bad-length, code ");
+            Serial.println(sr);
+        }
         return -1;
     }
     int state = s_radio.readData(buf, len);
 
+    // Capture signal-quality stats while the chip still has them in
+    // its last-packet registers. These calls are free — they just
+    // read SX1262 registers that were latched when the packet was
+    // demodulated. Useful for diagnosing "flaky" reception (is the
+    // signal marginal? are we close to the noise floor?) and for
+    // sanity-checking that packets from distant peers actually
+    // have plausible link budgets.
+    float rssi = s_radio.getRSSI();
+    float snr  = s_radio.getSNR();
+
+    // Decode the Reticulum flags byte (first byte of every packet)
+    // so every RX line shows pt=<type> ctx=<ratchet-bit> before
+    // microReticulum even gets its turn. Reticulum's flags layout
+    // (upstream RNS/Packet.py:get_packed_flags and microReticulum's
+    // Packet.cpp:unpack_flags — verified matching):
+    //
+    //   bits 7:6  header_type
+    //   bit 5     context_flag   (1 = Reticulum 0.7+ ratchet announce)
+    //   bit 4     transport_type
+    //   bits 3:2  destination_type
+    //   bits 1:0  packet_type    (0=DATA 1=ANNOUNCE 2=LINKREQ 3=PROOF)
+    //
+    // Logging this at the radio layer means we see EVERY packet the
+    // chip heard, even ones that microReticulum drops (e.g.
+    // "Ignored packet ... for other transport instance" filters).
+    // Crucial for answering "did Sideband's announce actually hit
+    // our radio?" in the face of flaky reception.
+    const char* pt_name = "UNK";
+    uint8_t pt  = 0;
+    uint8_t ctx = 0;
+    if (len > 0) {
+        pt  = (uint8_t)(buf[0] & 0x03);
+        ctx = (uint8_t)((buf[0] >> 5) & 0x01);
+        switch (pt) {
+            case 0: pt_name = "DATA";     break;
+            case 1: pt_name = "ANNOUNCE"; break;
+            case 2: pt_name = "LINKREQ";  break;
+            case 3: pt_name = "PROOF";    break;
+        }
+    }
+
+    Serial.print("Radio: RX ");
+    Serial.print(len);
+    Serial.print("B  RSSI=");
+    Serial.print(rssi, 1);
+    Serial.print(" dBm  SNR=");
+    Serial.print(snr, 1);
+    Serial.print(" dB  pt=");
+    Serial.print(pt_name);
+    Serial.print("  ctx=");
+    Serial.println(ctx);
+
     // Re-enter continuous RX for the next packet before we return,
     // so there's never a window where the chip is idle waiting for
-    // the application to tell it what to do next.
-    s_radio.startReceive();
+    // the application to tell it what to do next. If startReceive()
+    // fails here, we would silently stop receiving — log loudly so
+    // the operator sees it in the monitor.
+    int sr = s_radio.startReceive();
+    if (sr != RADIOLIB_ERR_NONE) {
+        Serial.print("Radio: startReceive() failed after RX, code ");
+        Serial.println(sr);
+    }
 
     return (state == RADIOLIB_ERR_NONE) ? (int)len : -1;
 }
