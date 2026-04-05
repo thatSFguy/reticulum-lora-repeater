@@ -1,0 +1,62 @@
+# Reticulum LoRa Repeater — Web Configurator
+
+Live: **https://thatSFguy.github.io/reticulum-lora-repeater/**
+
+A single-page Web Serial app that talks to the firmware's built-in
+serial provisioning console (`src/SerialConsole.cpp`). It lets a user
+connect a flashed node over USB, read its runtime status, edit the
+persistent Config, and calibrate the battery ADC — all without a
+PlatformIO install or a local serial monitor.
+
+## What works today (Phase 6a)
+
+- Read live `STATUS` (uptime, radio state, packet counters, battery
+  raw/scaled readings, display name).
+- Read the full persistent `CONFIG GET` into an editable form.
+- One-step battery calibration: enter a multimeter reading in mV,
+  click Calibrate, the firmware computes `batt_mult = measured / raw`
+  and stages it.
+- Stage config edits in the browser, push them to the device with a
+  single Commit & Reboot click.
+- Revert, Reset to defaults, Reboot — all of the console's commands
+  are wired to buttons.
+
+## What does NOT work yet (Phase 6b)
+
+- **Flashing firmware over Web Serial.** The nRF52 Adafruit bootloader
+  speaks SLIP-framed DFU, not a simple bootstrap loader like ESP32's
+  esptool, and a pure-browser port is non-trivial. For now, flash
+  firmware manually: `pio run -e Faketec -t upload --upload-port COMxx`.
+
+## Browser requirements
+
+- **Chromium-based browser** (Chrome, Edge, Opera, Brave) on desktop.
+  Firefox and Safari do not implement the Web Serial API.
+- **Secure context** — the page must be served over `https://` or
+  from `http://localhost`. GitHub Pages provides HTTPS automatically.
+
+## Local development
+
+```
+cd docs
+python -m http.server 8000
+# open http://localhost:8000/
+```
+
+Web Serial works over `http://localhost` so you can iterate on the UI
+without deploying to Pages.
+
+## Files
+
+| File             | Purpose                                                      |
+|------------------|--------------------------------------------------------------|
+| `index.html`     | Single-page UI — structure, styling, form fields             |
+| `console.js`     | `RLRConsole` Web Serial client + DOM glue                    |
+| `.nojekyll`      | Disables Jekyll on GitHub Pages so assets serve unmodified   |
+
+## Protocol reference
+
+See `docs/SERIAL_PROTOCOL.md` and `src/SerialConsole.cpp` in this repo
+for the authoritative command list. Every response ends with either a
+line reading `OK` or `ERR: <reason>` — the web client reads until it
+sees one of those.
