@@ -512,7 +512,16 @@ class RLRConsole {
           const assets = (r.assets || [])
             .map(a => {
               const m = ASSET_NAME_RE.exec(a.name);
-              return m ? { name: a.name, url: a.browser_download_url, size: a.size, board: m[1] } : null;
+              // Use the API asset URL, not browser_download_url.
+              // browser_download_url redirects through github.com
+              // which doesn't emit CORS headers on the 302, so
+              // fetch() from the browser fails with "Failed to
+              // fetch". The api.github.com/.../releases/assets/{id}
+              // endpoint with Accept: application/octet-stream
+              // returns the same bytes and IS CORS-friendly across
+              // the full redirect chain. Same trick Meshtastic and
+              // ESPHome's webflashers use.
+              return m ? { name: a.name, apiUrl: a.url, size: a.size, board: m[1] } : null;
             })
             .filter(Boolean);
           return { tag: r.tag_name, name: r.name, prerelease: r.prerelease, published: r.published_at, assets };
@@ -577,7 +586,12 @@ class RLRConsole {
     btnLoadRelease.disabled = true;
     relStatus.textContent = `Downloading ${asset.name}…`;
     try {
-      const res = await fetch(asset.url);
+      // Accept: application/octet-stream tells the API asset
+      // endpoint to return the binary (via a CORS-friendly 302)
+      // instead of the JSON asset metadata it serves by default.
+      const res = await fetch(asset.apiUrl, {
+        headers: { 'Accept': 'application/octet-stream' },
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       // Stream the response so we can show download progress.
