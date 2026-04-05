@@ -71,17 +71,31 @@ void setup() {
     Serial.print(g_config.txp_dbm);
     Serial.println(" dBm");
 
-    // --- Phase 2+ wires up real radio + transport here. ---
-    // rlr::radio::init_hardware();
-    // rlr::radio::begin(g_config);
-    // rlr::transport::init(g_config);
+    // --- Radio + Reticulum transport ---
+    // Order matters: VEXT + SPI + chip probe first, then apply config
+    // to the live radio, then start the Reticulum transport stack on
+    // top of it. If any step fails we still enter loop() so the
+    // serial console is available for diagnosis.
+    if (rlr::radio::init_hardware()) {
+        if (rlr::radio::begin(g_config)) {
+            rlr::transport::init(g_config);
+        } else {
+            Serial.println("Setup: radio::begin() failed — transport not started");
+        }
+    } else {
+        Serial.println("Setup: radio::init_hardware() failed — transport not started");
+    }
+
+    // Telemetry + LXMF presence are Phase 5 — stubs for now, safe to
+    // call even before they're implemented (both init() return false
+    // quietly, both tick() are no-ops).
     // rlr::telemetry::init(g_config);
     // rlr::lxmf_presence::init(g_config);
 
     rlr::serial_console::init();
 
     Serial.println();
-    Serial.println("Setup complete. (Phase 1 scaffold — radio + transport not yet wired.)");
+    Serial.println("Setup complete.");
     Serial.println("Type HELP over serial for commands.");
 }
 
@@ -91,7 +105,7 @@ void setup() {
 // so via millis()-based state machines, never delay().
 // -------------------------------------------------------------------
 void loop() {
-    // rlr::transport::tick();     // microReticulum scheduler slot (Phase 2)
+    rlr::transport::tick();
     // rlr::telemetry::tick(g_config);      // (Phase 5)
     // rlr::lxmf_presence::tick(g_config);  // (Phase 5)
     rlr::led::heartbeat_tick(g_config);

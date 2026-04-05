@@ -5,6 +5,11 @@
 
 #include "Config.h"
 
+// Forward-declare so Radio.h doesn't have to pull in the full driver
+// header. Consumers that need the driver (Transport::LoRaInterface)
+// include src/drivers/sx126x.h directly.
+class sx126x;
+
 namespace rlr { namespace radio {
 
 // Assert PIN_VEXT_EN (if the board has it), initialise SPI with the
@@ -23,5 +28,11 @@ bool online();
 
 // Force the radio into standby (used by shutdown paths).
 void stop();
+
+// Access the underlying driver instance. Intended only for
+// Transport's LoRaInterface which needs to call beginPacket/write/
+// endPacket/available/read directly on the driver. Everything else
+// should go through the functions above.
+sx126x& driver();
 
 }} // namespace rlr::radio
