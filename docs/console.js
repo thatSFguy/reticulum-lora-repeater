@@ -419,6 +419,36 @@ class RLRConsole {
 
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+  // Wait for a USB re-enumeration event after a DFU touch. Resolves
+  // to 'disconnected' if the touched port drops, 'connected' if a
+  // new port appears, or 'timeout' if neither happens in time. Both
+  // events clean up their listeners on resolution so we don't leak
+  // handlers into subsequent flash attempts.
+  function waitForReenumeration(touchedPort, timeoutMs) {
+    return new Promise((resolve) => {
+      let resolved = false;
+      const finish = (outcome) => {
+        if (resolved) return;
+        resolved = true;
+        navigator.serial.removeEventListener('connect',    onConnect);
+        navigator.serial.removeEventListener('disconnect', onDisconnect);
+        clearTimeout(timer);
+        resolve(outcome);
+      };
+      const onConnect    = ()   => finish('connected');
+      const onDisconnect = (ev) => {
+        // Any disconnect during the wait window counts — we don't
+        // try to match the event to the touched port because the
+        // port object identity can be unstable across re-enumeration
+        // on some OSes.
+        finish('disconnected');
+      };
+      navigator.serial.addEventListener('connect',    onConnect);
+      navigator.serial.addEventListener('disconnect', onDisconnect);
+      const timer = setTimeout(() => finish('timeout'), timeoutMs);
+    });
+  }
+
   // ---------------------------------------------------------------
   //  Flash panel — picks a firmware.zip, opens a SECOND serial port
   //  (the bootloader CDC, not the application CDC the rest of this
@@ -662,14 +692,47 @@ class RLRConsole {
         }
       }
 
-      // Brief hold so the USB host driver definitely observes the
-      // 1200-baud state before we tear it down. 50 ms is enough on
-      // every OS tested; Arduino IDE uses a similar short delay.
-      await sleep(50);
+      // Explicitly drop DTR and RTS so the host driver sends a
+      // definite "line state = inactive" signal before we tear the
+      // port down. Web Serial asserts DTR by default on open(); some
+      // bootloaders use the DTR-low transition (not just the 1200
+      // baud rate itself) to decide whether this is a real touch or
+      // a casual port probe. Wrap in try/catch because not every
+      // platform supports setSignals and we don't want an exception
+      // here to abort a touch that would otherwise work.
+      try {
+        await dfuTouchPort.setSignals({
+          dataTerminalReady: false,
+          requestToSend:     false,
+        });
+      } catch (e) {
+        log('info', 'setSignals not supported or failed (ignored): ' + e.message);
+      }
+
+      // Hold long enough for the host's USB driver to propagate the
+      // SET_LINE_CODING(1200) + DTR-low state to the device before
+      // we disconnect it. 50 ms was too short (silent touch
+      // failures); Arduino IDE and ESP Web Tools both use ~250 ms.
+      await sleep(250);
       try { await dfuTouchPort.close(); } catch (e) {}
 
-      log('ok', '--- DFU touch sent — the board should now reboot into bootloader mode ---');
-      log('info', 'Wait ~2 seconds for USB re-enumeration, then click Flash and pick the new port.');
+      log('ok', '--- DFU touch sent — waiting for the board to re-enumerate as a bootloader device ---');
+
+      // Actively wait for the USB re-enumeration so the user gets
+      // positive confirmation before clicking Flash. We listen for
+      // both the 'disconnect' event on the touched port (board
+      // reset) AND the 'connect' event for any new port (bootloader
+      // enumerated). Either signals success; a timeout means the
+      // touch didn't trigger a reboot.
+      const reenum = await waitForReenumeration(dfuTouchPort, 4000);
+      if (reenum === 'connected') {
+        log('ok', '--- new USB device appeared — bootloader is ready, click Flash ---');
+      } else if (reenum === 'disconnected') {
+        log('ok', '--- board disconnected — give it a moment, then click Flash ---');
+      } else {
+        log('err', '--- no re-enumeration observed within 4 s ---');
+        log('info', 'The 1200-baud touch did not trigger a reboot. Try double-tapping the reset button on the board instead.');
+      }
     } catch (e) {
       log('err', 'DFU touch failed: ' + e.message);
     } finally {
