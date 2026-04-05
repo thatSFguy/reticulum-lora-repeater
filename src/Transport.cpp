@@ -253,6 +253,17 @@ bool init(const Config& cfg) {
 void tick() {
     if (!s_initialized) return;
 
+    // Dispatch any pending DIO1 interrupt. On nRF52 and ESP32 the
+    // sx126x driver's DIO1 ISR (sx126x::onDio0Rise) does NOT call the
+    // user callback directly — it only sets a `_dio0_pending` flag.
+    // The actual packet readout and _onReceive invocation happens
+    // inside handleDio0IfPending(), which MUST be called from the
+    // main loop. Without this line, packets are received fine by the
+    // chip but never reach our on_radio_receive handler, and the
+    // RX staging buffer stays empty forever. This is the sibling
+    // project's RNode_Firmware.ino:2399/2419 pattern.
+    rlr::radio::driver().handleDio0IfPending();
+
     // Drain the RX staging buffer. We copy out under a brief IRQ-off
     // window so the ISR can't scribble while we're reading, then
     // hand the bytes to Reticulum in normal task context.
