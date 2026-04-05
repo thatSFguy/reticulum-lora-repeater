@@ -430,25 +430,192 @@ class RLRConsole {
   const fwBar   = $('fw-progress-bar');
   const fwStage = $('fw-stage');
 
+  // Release picker elements.
+  const relVersion     = $('rel-version');
+  const relBoard       = $('rel-board');
+  const relStatus      = $('rel-status');
+  const btnLoadRelease = $('btn-load-release');
+
   let selectedPackage = null;
+
+  // Shared "package is loaded" callback — reused by both the local
+  // file path and the release-download path so the UI stays in one
+  // place and the two sources can't drift.
+  function setLoadedPackage(pkg, label) {
+    selectedPackage = pkg;
+    if (pkg) {
+      const appSize  = pkg.firmware.length;
+      const initSize = pkg.initPacket.length;
+      fwInfo.textContent = `${label} — app ${appSize} B, init ${initSize} B`;
+      btnFlash.disabled  = false;
+      log('info', `package loaded (${label}): app=${appSize} bytes, init=${initSize} bytes`);
+    } else {
+      fwInfo.textContent = 'no firmware loaded';
+      btnFlash.disabled  = true;
+    }
+  }
 
   fwFile.addEventListener('change', async () => {
     const f = fwFile.files && fwFile.files[0];
-    if (!f) { selectedPackage = null; btnFlash.disabled = true; fwInfo.textContent = 'no file selected'; return; }
+    if (!f) { setLoadedPackage(null); return; }
     try {
-      selectedPackage = await RLRDfu.DfuPackage.fromFile(f);
-      const appSize = selectedPackage.firmware.length;
-      const initSize = selectedPackage.initPacket.length;
-      fwInfo.textContent = `${f.name} — app ${appSize} B, init ${initSize} B`;
-      btnFlash.disabled = false;
-      log('info', `package loaded: app=${appSize} bytes, init=${initSize} bytes`);
+      const pkg = await RLRDfu.DfuPackage.fromFile(f);
+      setLoadedPackage(pkg, f.name);
     } catch (e) {
-      selectedPackage = null;
-      btnFlash.disabled = true;
+      setLoadedPackage(null);
       fwInfo.textContent = 'error: ' + e.message;
       log('err', 'package parse failed: ' + e.message);
     }
   });
+
+  // ---------------------------------------------------------------
+  //  GitHub Releases integration
+  // ---------------------------------------------------------------
+  //
+  // On page load we hit the public Releases API and populate the
+  // version + board dropdowns from whatever's there. Asset filename
+  // convention matches the CI workflow's staging step:
+  //
+  //   reticulum-lora-repeater-<board>-<tag>.zip
+  //
+  // so parsing "board" out of an asset name is a single regex. Both
+  // version and board dropdowns are selection-driven: changing the
+  // version repopulates the board list; clicking Download fetches
+  // the selected asset with progress and hands the bytes to the
+  // shared setLoadedPackage() path.
+
+  const REPO_OWNER = 'thatSFguy';
+  const REPO_NAME  = 'reticulum-lora-repeater';
+  const RELEASE_API = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases`;
+  const ASSET_NAME_RE = /^reticulum-lora-repeater-([^-]+)-(v.+)\.zip$/;
+
+  let releases = [];  // parsed API response, filtered to those with at least one matching .zip
+
+  async function fetchReleases() {
+    relStatus.textContent = 'Fetching releases from GitHub…';
+    try {
+      const res = await fetch(RELEASE_API, { headers: { 'Accept': 'application/vnd.github+json' } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const raw = await res.json();
+
+      // Keep only releases that actually have a flashable asset for
+      // at least one board. Drafts are hidden from unauthenticated
+      // callers automatically, so no extra filter needed there.
+      releases = raw
+        .map(r => {
+          const assets = (r.assets || [])
+            .map(a => {
+              const m = ASSET_NAME_RE.exec(a.name);
+              return m ? { name: a.name, url: a.browser_download_url, size: a.size, board: m[1] } : null;
+            })
+            .filter(Boolean);
+          return { tag: r.tag_name, name: r.name, prerelease: r.prerelease, published: r.published_at, assets };
+        })
+        .filter(r => r.assets.length > 0);
+
+      if (releases.length === 0) {
+        relStatus.textContent = 'No flashable releases found on this repo.';
+        relVersion.innerHTML = '<option>no releases</option>';
+        return;
+      }
+
+      // Populate version dropdown, newest first. Prefer non-prereleases
+      // at the top but keep them all in the list so testers can grab
+      // -rc / -test builds without switching flags.
+      releases.sort((a, b) => (b.published || '').localeCompare(a.published || ''));
+      relVersion.innerHTML = '';
+      for (const r of releases) {
+        const opt = document.createElement('option');
+        opt.value = r.tag;
+        const date = (r.published || '').slice(0, 10);
+        opt.textContent = r.prerelease ? `${r.tag} (prerelease, ${date})` : `${r.tag} (${date})`;
+        relVersion.appendChild(opt);
+      }
+
+      // Default selection: the newest non-prerelease if any exist,
+      // otherwise just the newest overall.
+      const stable = releases.find(r => !r.prerelease);
+      relVersion.value = (stable || releases[0]).tag;
+      relVersion.disabled = false;
+      repopulateBoardDropdown();
+      relStatus.textContent = `Loaded ${releases.length} release(s).`;
+    } catch (e) {
+      relStatus.textContent = 'Could not fetch releases: ' + e.message + ' — use local upload instead.';
+      log('err', 'release fetch failed: ' + e.message);
+      relVersion.innerHTML = '<option>unavailable</option>';
+    }
+  }
+
+  function repopulateBoardDropdown() {
+    const r = releases.find(x => x.tag === relVersion.value);
+    relBoard.innerHTML = '';
+    if (!r) { relBoard.disabled = true; btnLoadRelease.disabled = true; return; }
+    for (const a of r.assets) {
+      const opt = document.createElement('option');
+      opt.value = a.board;
+      opt.textContent = a.board;
+      relBoard.appendChild(opt);
+    }
+    relBoard.disabled       = false;
+    btnLoadRelease.disabled = false;
+  }
+
+  relVersion.addEventListener('change', repopulateBoardDropdown);
+
+  btnLoadRelease.addEventListener('click', async () => {
+    const r = releases.find(x => x.tag === relVersion.value);
+    if (!r) return;
+    const asset = r.assets.find(a => a.board === relBoard.value);
+    if (!asset) return;
+
+    btnLoadRelease.disabled = true;
+    relStatus.textContent = `Downloading ${asset.name}…`;
+    try {
+      const res = await fetch(asset.url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      // Stream the response so we can show download progress.
+      // Content-Length may be absent after the S3 redirect on some
+      // CDNs — we fall back to an indeterminate byte counter in
+      // that case rather than failing.
+      const total   = parseInt(res.headers.get('Content-Length') || '0', 10) || asset.size || 0;
+      const reader  = res.body.getReader();
+      const chunks  = [];
+      let received  = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value) continue;
+        chunks.push(value);
+        received += value.length;
+        if (total > 0) {
+          const pct = Math.floor(100 * received / total);
+          relStatus.textContent = `Downloading ${asset.name}: ${received} / ${total} B (${pct}%)`;
+        } else {
+          relStatus.textContent = `Downloading ${asset.name}: ${received} B`;
+        }
+      }
+
+      const buf = new Uint8Array(received);
+      let offset = 0;
+      for (const c of chunks) { buf.set(c, offset); offset += c.length; }
+
+      const pkg = await RLRDfu.DfuPackage.fromArrayBuffer(buf.buffer);
+      setLoadedPackage(pkg, `${asset.board} ${r.tag}`);
+      relStatus.textContent = `Loaded ${asset.name} (${received} B).`;
+    } catch (e) {
+      relStatus.textContent = 'Download failed: ' + e.message;
+      log('err', 'release download failed: ' + e.message);
+    } finally {
+      btnLoadRelease.disabled = false;
+    }
+  });
+
+  // Kick off the release fetch as soon as the page loads. If the
+  // user's browser can't reach GitHub (offline, CORS quirk, rate
+  // limit), we log the error and leave the local-file path as the
+  // working fallback.
+  fetchReleases();
 
   btnFlash.addEventListener('click', async () => {
     if (!selectedPackage) return;

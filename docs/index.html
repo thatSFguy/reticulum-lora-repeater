@@ -120,10 +120,23 @@
     <code>pio run -e Faketec</code> at
     <code>.pio/build/Faketec/firmware.zip</code>) and click Flash.
   </p>
-  <div class="file-drop">
-    <input id="fw-file" type="file" accept=".zip,application/zip">
-    <span id="fw-info">no file selected</span>
+  <div class="row">
+    <div class="field"><label>Version</label>
+      <select id="rel-version" disabled><option>loading releases…</option></select></div>
+    <div class="field narrow"><label>Board</label>
+      <select id="rel-board" disabled></select></div>
+    <div><button id="btn-load-release" class="secondary" disabled>Download</button></div>
   </div>
+  <div id="rel-status" class="stage-label"></div>
+
+  <details style="margin-top: 14px;">
+    <summary style="cursor: pointer; color: var(--muted); font-size: 12px;">Or upload a local firmware.zip (for developers building their own)</summary>
+    <div class="file-drop" style="margin-top: 8px;">
+      <input id="fw-file" type="file" accept=".zip,application/zip">
+    </div>
+  </details>
+
+  <div id="fw-info" class="stage-label" style="margin-top: 14px;">no firmware loaded</div>
   <div class="actions">
     <button id="btn-flash" disabled>Flash</button>
     <span style="color: var(--muted); font-size: 12px; align-self: center;">

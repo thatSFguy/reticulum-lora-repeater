@@ -117,11 +117,12 @@ class DfuPackage {
     this.manifest   = null;       // parsed JSON
   }
 
-  // `file` is a File/Blob from an <input type="file"> change event.
-  static async fromFile(file) {
+  // Core parser — takes raw zip bytes and pulls out the application
+  // binary and init packet. Shared by both entry points so the
+  // local-file and release-download code paths can't drift.
+  static async fromArrayBuffer(buf) {
     if (!window.JSZip) throw new Error('JSZip not loaded — check index.html');
-    const buf  = await file.arrayBuffer();
-    const zip  = await window.JSZip.loadAsync(buf);
+    const zip = await window.JSZip.loadAsync(buf);
 
     const manifestEntry = zip.file('manifest.json');
     if (!manifestEntry) throw new Error('firmware.zip has no manifest.json');
@@ -141,6 +142,12 @@ class DfuPackage {
     pkg.firmware   = new Uint8Array(await binEntry.async('arraybuffer'));
     pkg.initPacket = new Uint8Array(await datEntry.async('arraybuffer'));
     return pkg;
+  }
+
+  // `file` is a File/Blob from an <input type="file"> change event.
+  static async fromFile(file) {
+    const buf = await file.arrayBuffer();
+    return DfuPackage.fromArrayBuffer(buf);
   }
 }
 
