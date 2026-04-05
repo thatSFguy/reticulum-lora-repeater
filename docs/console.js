@@ -440,18 +440,24 @@ class RLRConsole {
 
   // Shared "package is loaded" callback — reused by both the local
   // file path and the release-download path so the UI stays in one
-  // place and the two sources can't drift.
+  // place and the two sources can't drift. Also gates the DFU and
+  // Flash buttons on having a package, because there's no point
+  // putting the board into bootloader mode if we have nothing to
+  // flash.
   function setLoadedPackage(pkg, label) {
     selectedPackage = pkg;
+    const btnDfuEl = document.getElementById('btn-dfu');
     if (pkg) {
       const appSize  = pkg.firmware.length;
       const initSize = pkg.initPacket.length;
       fwInfo.textContent = `${label} — app ${appSize} B, init ${initSize} B`;
       btnFlash.disabled  = false;
+      if (btnDfuEl) btnDfuEl.disabled = false;
       log('info', `package loaded (${label}): app=${appSize} bytes, init=${initSize} bytes`);
     } else {
       fwInfo.textContent = 'no firmware loaded';
       btnFlash.disabled  = true;
+      if (btnDfuEl) btnDfuEl.disabled = true;
     }
   }
 
