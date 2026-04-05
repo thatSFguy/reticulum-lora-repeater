@@ -112,13 +112,12 @@
 <div class="panel">
   <h2>Flash firmware</h2>
   <p style="margin: 0 0 12px 0; color: var(--muted); font-size: 13px;">
-    Put the board in <strong>bootloader mode</strong> first:
-    double-tap the reset button within ~500&nbsp;ms. The board will
-    re-enumerate as a different USB serial device — select that new
-    port in the picker below. Then pick a
-    <code>firmware.zip</code> (produced by
-    <code>pio run -e Faketec</code> at
-    <code>.pio/build/Faketec/firmware.zip</code>) and click Flash.
+    Pick a version below, click <strong>Download</strong>, then click
+    <strong>Enter DFU mode</strong> to put the running board into
+    bootloader mode automatically. Finally click <strong>Flash</strong>
+    and select the new bootloader port that appears in the picker.
+    If <em>Enter DFU mode</em> doesn't work (rare), fall back to
+    double-tapping the reset button on the board.
   </p>
   <div class="row">
     <div class="field"><label>Version</label>
@@ -138,9 +137,10 @@
 
   <div id="fw-info" class="stage-label" style="margin-top: 14px;">no firmware loaded</div>
   <div class="actions">
+    <button id="btn-dfu" class="secondary">Enter DFU mode</button>
     <button id="btn-flash" disabled>Flash</button>
     <span style="color: var(--muted); font-size: 12px; align-self: center;">
-      The Flash button talks to the Adafruit nRF52 serial DFU bootloader directly — the application console port is NOT the same port.
+      DFU button triggers bootloader via 1200-baud touch on the application port. Flash talks to a different bootloader port.
     </span>
   </div>
   <div class="progress"><div id="fw-progress-bar"></div></div>

@@ -617,6 +617,71 @@ class RLRConsole {
   // working fallback.
   fetchReleases();
 
+  // ---------------------------------------------------------------
+  //  Enter DFU mode via the 1200-baud touch
+  // ---------------------------------------------------------------
+  //
+  // The Adafruit nRF52 bootloader listens for a host-initiated
+  // "open CDC at 1200 bps, then close" sequence. When it sees that,
+  // it sets the 1200bps_touch flag and reboots into the bootloader
+  // instead of the application on the next power-up. Same mechanism
+  // as Arduino IDE's auto-reset and adafruit-nrfutil --touch 1200.
+  //
+  // If the user already has a console session open on the app port
+  // we reuse that port object (saves a second port-picker click); if
+  // not, we prompt requestPort() for the currently-running app port.
+  // Either way the outcome is the same: device reboots into the
+  // bootloader CDC, which will appear as a different port — the
+  // user selects that new port when they click Flash.
+
+  const btnDfu = $('btn-dfu');
+
+  btnDfu.addEventListener('click', async () => {
+    btnDfu.disabled = true;
+    try {
+      let dfuTouchPort = null;
+      if (con.isConnected()) {
+        // Capture the reference BEFORE disconnect() nulls it out in
+        // _teardown, then close the console cleanly so the port's
+        // reader/writer locks are released.
+        dfuTouchPort = con.port;
+        log('info', '--- closing console session to issue DFU touch ---');
+        await con.disconnect();
+        setConnected(false);
+      } else {
+        log('info', 'Pick the RUNNING application port (not the bootloader) to send the DFU touch...');
+        dfuTouchPort = await navigator.serial.requestPort();
+      }
+
+      // Open at 1200 baud and close. The open() may fail briefly on
+      // Windows because the port was literally just closed by
+      // disconnect() above — a short retry wins that race.
+      let opened = false;
+      for (let i = 0; i < 5 && !opened; i++) {
+        try {
+          await dfuTouchPort.open({ baudRate: 1200 });
+          opened = true;
+        } catch (e) {
+          if (i === 4) throw e;
+          await sleep(150);
+        }
+      }
+
+      // Brief hold so the USB host driver definitely observes the
+      // 1200-baud state before we tear it down. 50 ms is enough on
+      // every OS tested; Arduino IDE uses a similar short delay.
+      await sleep(50);
+      try { await dfuTouchPort.close(); } catch (e) {}
+
+      log('ok', '--- DFU touch sent — the board should now reboot into bootloader mode ---');
+      log('info', 'Wait ~2 seconds for USB re-enumeration, then click Flash and pick the new port.');
+    } catch (e) {
+      log('err', 'DFU touch failed: ' + e.message);
+    } finally {
+      btnDfu.disabled = false;
+    }
+  });
+
   btnFlash.addEventListener('click', async () => {
     if (!selectedPackage) return;
     if (!('serial' in navigator)) { log('err', 'Web Serial not available'); return; }
