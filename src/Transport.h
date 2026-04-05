@@ -24,4 +24,12 @@ uint32_t destination_count();
 uint32_t packets_in();
 uint32_t packets_out();
 
+// RX diagnostic counters — ISR entry counts, broken down by outcome.
+// Temporary Phase 2 bring-up aid to localize radio RX failures. Safe
+// to read from loop() at any time; underlying storage is volatile.
+uint32_t rx_isr_fires();
+uint32_t rx_isr_bad_size();
+uint32_t rx_isr_dropped();
+uint32_t rx_isr_latched();
+
 }} // namespace rlr::transport

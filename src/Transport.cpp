@@ -68,6 +68,17 @@ static volatile size_t  s_rx_len = 0;
 static volatile bool    s_rx_ready = false;
 
 // ---------------------------------------------------------------------
+//  RX diagnostic counters — incremented inside the ISR, printed from
+//  tick(). These answer the question "is the ISR firing at all?"
+//  without needing a scope on the DIO1 pin. Each counter isolates a
+//  different failure mode so we can localize bugs in the radio path.
+// ---------------------------------------------------------------------
+static volatile uint32_t s_isr_fire_count      = 0;  // every ISR entry
+static volatile uint32_t s_isr_bad_size_count  = 0;  // packet_size <= 0 or > RX_STAGE_MAX
+static volatile uint32_t s_isr_dropped_count   = 0;  // dropped because s_rx_ready was still set
+static volatile uint32_t s_isr_latched_count   = 0;  // successfully latched into staging buffer
+
+// ---------------------------------------------------------------------
 //  LoRaInterface — RNS InterfaceImpl bridging to the sx126x driver.
 // ---------------------------------------------------------------------
 class LoRaInterface : public RNS::InterfaceImpl {
@@ -148,14 +159,22 @@ static uint32_t s_packets_out = 0;
 //  the FIFO contents into the staging buffer and set the ready flag.
 // ---------------------------------------------------------------------
 static void on_radio_receive(int packet_size) {
-    if (packet_size <= 0 || (size_t)packet_size > RX_STAGE_MAX) return;
-    if (s_rx_ready) return;                         // previous packet not drained yet, drop this one
+    s_isr_fire_count++;                             // every ISR entry — tells us if it fires at all
+    if (packet_size <= 0 || (size_t)packet_size > RX_STAGE_MAX) {
+        s_isr_bad_size_count++;
+        return;
+    }
+    if (s_rx_ready) {
+        s_isr_dropped_count++;                      // previous packet not drained yet, drop this one
+        return;
+    }
     sx126x& radio = rlr::radio::driver();
     for (int i = 0; i < packet_size; i++) {
         s_rx_buf[i] = (uint8_t)radio.read();
     }
     s_rx_len = (size_t)packet_size;
     s_rx_ready = true;
+    s_isr_latched_count++;
 }
 
 // ---------------------------------------------------------------------
@@ -269,5 +288,10 @@ uint32_t path_count()        { return 0; } // TODO Phase 4: plumb from RNS::Tran
 uint32_t destination_count() { return 0; } // TODO Phase 4
 uint32_t packets_in()        { return s_packets_in; }
 uint32_t packets_out()       { return s_packets_out; }
+
+uint32_t rx_isr_fires()      { return s_isr_fire_count; }
+uint32_t rx_isr_bad_size()   { return s_isr_bad_size_count; }
+uint32_t rx_isr_dropped()    { return s_isr_dropped_count; }
+uint32_t rx_isr_latched()    { return s_isr_latched_count; }
 
 }} // namespace rlr::transport
