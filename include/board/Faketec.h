@@ -84,10 +84,17 @@
 // overrides via the webflasher or serial console. Pick safe,
 // universally-legal defaults here — the webflasher will force region
 // selection before the user actually commits.
-#define DEFAULT_CONFIG_FREQ_HZ          915000000UL  // US ISM center; webflasher reconciles
-#define DEFAULT_CONFIG_BW_HZ            125000UL     // narrow/long-range
+//
+// PHASE 2 BENCH TEST OVERRIDE: these match the existing mesh the
+// sibling project (microReticulum_Faketec_Repeater) is currently on,
+// so a fresh flash of this new-repo firmware can be validated against
+// real TTGO peers without waiting for Phase 4 (serial console) to
+// land. Revert to the US ISM defaults (915 MHz / 125 kHz / 14 dBm)
+// once Config persistence + provisioning is working.
+#define DEFAULT_CONFIG_FREQ_HZ          904375000UL  // TEMP: matches current mesh
+#define DEFAULT_CONFIG_BW_HZ            250000UL     // TEMP: matches current mesh
 #define DEFAULT_CONFIG_SF               10
 #define DEFAULT_CONFIG_CR               5
-#define DEFAULT_CONFIG_TXP_DBM          14           // conservative until user sets
-#define DEFAULT_CONFIG_BATT_MULT        1.284f       // field-calibrated for first unit
-#define DEFAULT_CONFIG_DISPLAY_NAME     "Unconfigured Repeater"
+#define DEFAULT_CONFIG_TXP_DBM          22           // TEMP: matches current mesh (SX1262 core; ext PA → ~30 dBm)
+#define DEFAULT_CONFIG_BATT_MULT        1.284f       // field-calibrated on USB @ 5 V
+#define DEFAULT_CONFIG_DISPLAY_NAME     "Faketec Repeater (new repo)"
