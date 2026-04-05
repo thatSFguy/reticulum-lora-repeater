@@ -101,9 +101,28 @@ jobs:
           path: release-assets/*
           retention-days: 30
 
+      # If a previous run (or a retargeted tag) left a Release object
+      # hanging around for this tag, delete it here so the attach step
+      # below can always create a clean new Release from scratch.
+      # Without this, softprops/action-gh-release ends up in a retry
+      # loop trying to update an existing release whose assets were
+      # partially written by a failed prior run, and eventually bails
+      # out with "Too many retries." We leave the git tag itself in
+      # place (--cleanup-tag=false) because the current workflow run
+      # is literally BEING triggered by that tag. The `|| true`
+      # guard makes the step idempotent: on the first ever run for a
+      # given tag, there's no release to delete and gh exits non-zero.
+      - name: Delete existing Release for a clean slate
+        if: startsWith(github.ref, 'refs/tags/')
+        run: gh release delete "${GITHUB_REF_NAME}" --yes --cleanup-tag=false 2>&1 || true
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       # Attach assets to the GitHub Release. Only runs when the
-      # trigger is a tag push (not manual dispatch). Idempotent:
-      # re-running for the same tag updates the existing release.
+      # trigger is a tag push (not manual dispatch). With the delete
+      # step above, this always creates a fresh Release rather than
+      # updating an existing one, avoiding the asset-replace retry
+      # storm softprops gets into when assets collide.
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
