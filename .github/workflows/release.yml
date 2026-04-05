@@ -1,12 +1,22 @@
 name: Release firmware
 
+# Pipeline shape:
+#
+#   build (matrix: one job per board)
+#     ↓  each uploads firmware-<board>-<tag> as a workflow artifact
+#   publish (single job, runs after all matrix jobs succeed)
+#     ↓  downloads every artifact
+#     ↓  creates ONE GitHub Release with all boards' assets attached
+#     ↓  commits same assets into docs/firmware/<tag>/ for the
+#        same-origin webflasher path
+#
 # Triggered on:
-#   - push of any tag matching v* → builds every env in the matrix
-#     and attaches firmware.zip + firmware.hex to a GitHub Release
-#   - manual workflow_dispatch → builds the same artifacts and uploads
-#     them as workflow artifacts, but DOES NOT create or modify a
-#     release. Use this to smoke-test the build pipeline before
-#     committing to a tag.
+#   - push of any tag matching v* → full pipeline runs, creates a
+#     GitHub Release, publishes to Pages
+#   - manual workflow_dispatch → matrix builds run and upload workflow
+#     artifacts for smoke-testing, but the publish job is skipped
+#     (guarded by `if: startsWith(github.ref, 'refs/tags/')`) so
+#     dispatch runs never touch Releases or master.
 
 on:
   push:
@@ -101,36 +111,72 @@ jobs:
           path: release-assets/*
           retention-days: 30
 
-      # If a previous run (or a retargeted tag) left a Release object
-      # hanging around for this tag, delete it here so the attach step
-      # below can always create a clean new Release from scratch.
-      # Without this, softprops/action-gh-release ends up in a retry
-      # loop trying to update an existing release whose assets were
-      # partially written by a failed prior run, and eventually bails
-      # out with "Too many retries." We leave the git tag itself in
-      # place (--cleanup-tag=false) because the current workflow run
-      # is literally BEING triggered by that tag. The `|| true`
-      # guard makes the step idempotent: on the first ever run for a
-      # given tag, there's no release to delete and gh exits non-zero.
-      - name: Delete existing Release for a clean slate
-        if: startsWith(github.ref, 'refs/tags/')
-        run: gh release delete "${GITHUB_REF_NAME}" --yes --cleanup-tag=false 2>&1 || true
-        env:
-          GH_TOKEN: ${{ github.token }}
+  # --------------------------------------------------------------------
+  #  publish — single post-matrix job that handles BOTH the GitHub
+  #  Release creation and the docs/firmware/ Pages commit. Combining
+  #  these two responsibilities into one job avoids the matrix-race
+  #  where two parallel "Create GitHub Release with assets" steps
+  #  fought over the same tag and one failed with "release already
+  #  exists" (what killed the v0.1.0 tag run at SHA f06274b).
+  #
+  #  This job runs exactly once per tag push after every matrix build
+  #  has uploaded its workflow artifact. It downloads all board
+  #  artifacts in one go, creates the GitHub Release with EVERY
+  #  board's assets attached to one release object, and commits the
+  #  same assets into docs/firmware/<tag>/ so the webflasher serves
+  #  them same-origin.
+  #
+  #  The matrix build job NO LONGER touches Releases — it just builds,
+  #  stages, and uploads a workflow artifact. Clean separation of
+  #  responsibilities; adding more boards to the matrix requires no
+  #  further changes to this job.
+  # --------------------------------------------------------------------
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout master (we commit docs/firmware/ back to master)
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
 
-      # Create the GitHub Release and upload assets directly via
-      # the gh CLI (preinstalled on GitHub-hosted runners). We
-      # previously used softprops/action-gh-release@v2, which was
-      # failing with "Too many retries." on both update-in-place
-      # and clean-create paths for reasons we couldn't diagnose
-      # from the job API alone. Using gh directly removes the
-      # third-party dependency, gives us transparent error output
-      # if anything goes wrong, and matches the way Meshtastic and
-      # most other active projects handle release publishing.
-      - name: Create GitHub Release with assets
-        if: startsWith(github.ref, 'refs/tags/')
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Download all board artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: downloaded-artifacts
+          pattern: firmware-*
+
+      - name: Stage release assets (flat layout for gh release upload)
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          # actions/download-artifact lays each artifact out under
+          # downloaded-artifacts/<artifact-name>/. Flatten into a
+          # single directory so gh release create can glob them.
+          find downloaded-artifacts -type f \( -name '*.zip' -o -name '*.hex' \) \
+            -exec cp -v {} release-assets/ \;
+          echo "Release assets staged:"
+          ls -la release-assets/
+
+      - name: Delete existing Release for a clean slate
+        run: |
+          # Idempotent: exits 0 even if no release exists yet (first
+          # run of a tag). Handles retargeted tags + retried runs.
+          gh release delete "${GITHUB_REF_NAME}" --yes --cleanup-tag=false 2>&1 || true
+
+      - name: Create GitHub Release with all board assets
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
@@ -150,12 +196,12 @@ jobs:
 
           ## Manual flashing
 
-          Assets attached to this release:
+          Per-board assets attached to this release:
 
-          | File                  | How to use                                                              |
-          |-----------------------|-------------------------------------------------------------------------|
-          | `*-Faketec-*.zip`     | `adafruit-nrfutil dfu serial -pkg <zip> -p <port>`, or the web flasher  |
-          | `*-Faketec-*.hex`     | nRFConnect Programmer, J-Link Commander, or any SWD tool                |
+          | File                    | How to use                                                              |
+          |-------------------------|-------------------------------------------------------------------------|
+          | `*.zip`                 | `adafruit-nrfutil dfu serial -pkg <zip> -p <port>`, or the web flasher  |
+          | `*.hex`                 | nRFConnect Programmer, J-Link Commander, or any SWD tool                |
 
           Put the board in **bootloader mode** (double-tap reset within
           ~500 ms) before flashing over serial. The Adafruit nRF52
@@ -163,68 +209,25 @@ jobs:
           application firmware.
           EOF
 
-          # Single call creates the release AND uploads assets. The
-          # Delete existing Release step above guarantees we're
-          # always starting from a clean slate.
           gh release create "$TAG" \
             --title "$TAG" \
             --notes-file release-body.md \
             $PRERELEASE_FLAG \
             release-assets/*
 
-  # --------------------------------------------------------------------
-  #  publish-to-pages — copies the built firmware into docs/firmware/
-  #  so the webflasher can fetch it same-origin (no CORS headaches).
-  #
-  #  This runs once per tag push after every matrix build finishes,
-  #  downloads all board artifacts in one go, stages them under
-  #  docs/firmware/<tag>/, regenerates docs/firmware/manifest.json,
-  #  and pushes the result back to master as a single commit. The
-  #  workflow isn't triggered by pushes to master (only tags +
-  #  workflow_dispatch), so this back-commit doesn't create an
-  #  infinite CI loop.
-  # --------------------------------------------------------------------
-  publish-to-pages:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout master (not the tag — we're committing to master)
-        uses: actions/checkout@v4
-        with:
-          ref: master
-          fetch-depth: 0
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Download all board artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: downloaded-artifacts
-          pattern: firmware-*
-
-      - name: Stage firmware under docs/firmware/<tag>/
+      - name: Stage firmware under docs/firmware/<tag>/ for webflasher
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
           TARGET="docs/firmware/${TAG}"
           mkdir -p "${TARGET}"
-          # actions/download-artifact lays each artifact out under
-          # downloaded-artifacts/<artifact-name>/. Flatten everything
-          # into the target directory.
-          find downloaded-artifacts -type f \( -name '*.zip' -o -name '*.hex' \) \
-            -exec cp -v {} "${TARGET}/" \;
+          cp -v release-assets/* "${TARGET}/"
           ls -la "${TARGET}"
 
       - name: Regenerate manifest
         run: python scripts/gen_firmware_manifest.py
 
-      - name: Commit and push
+      - name: Commit webflasher assets and push
         run: |
           set -euo pipefail
           git config user.name  "github-actions[bot]"
