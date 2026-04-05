@@ -3,7 +3,8 @@
 // CDC. Commands:
 //
 //   PING | VERSION | STATUS | HELP | REBOOT
-//   CONFIG GET | CONFIG SET <key> <value> | CONFIG RESET | CONFIG COMMIT
+//   CONFIG GET | CONFIG SET <key> <value>
+//   CONFIG RESET | CONFIG REVERT | CONFIG COMMIT
 //
 // Every response ends with a line "OK" or "ERR: <reason>". The
 // webflasher (and any terminal) parses until it sees one of these.
@@ -13,16 +14,19 @@
 
 namespace rlr { namespace serial_console {
 
-// Initialise (no-op for now, reserved for Phase 4).
-void init();
+// Wire the console up to the live Config that main.cpp owns. The
+// staging copy the user edits is seeded from this reference; on
+// COMMIT we validate, persist via config::save(), and NVIC reset so
+// the new settings take effect. Must be called after
+// config::load_or_defaults() has populated `live`.
+void init(Config& live);
 
 // Called every loop tick. Reads available serial bytes, splits on
 // newline, dispatches commands. Non-blocking.
 void tick();
 
-// Direct access to the staging Config the console edits. main.cpp
-// uses this on first boot to seed the stage from disk before
-// opening the console for reads/writes.
+// Direct access to the staging Config the console edits. Exposed
+// mainly for tests and for STATUS to introspect uncommitted edits.
 Config& staging();
 
 }} // namespace rlr::serial_console

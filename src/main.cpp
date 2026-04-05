@@ -109,6 +109,12 @@ void setup() {
         if (rlr::radio::begin(g_config)) {
             if (rlr::transport::init(g_config)) {
                 rlr::radio::start_rx();
+                // Phase 5: telemetry + LXMF presence destinations are
+                // stamped against the Transport identity, so they
+                // MUST be created after transport::init() has called
+                // reticulum.start() and the identity is loaded.
+                rlr::telemetry::init(g_config);
+                rlr::lxmf_presence::init(g_config);
             } else {
                 Serial.println("Setup: transport::init() failed — radio staying in standby");
             }
@@ -119,13 +125,7 @@ void setup() {
         Serial.println("Setup: radio::init_hardware() failed — transport not started");
     }
 
-    // Telemetry + LXMF presence are Phase 5 — stubs for now, safe to
-    // call even before they're implemented (both init() return false
-    // quietly, both tick() are no-ops).
-    // rlr::telemetry::init(g_config);
-    // rlr::lxmf_presence::init(g_config);
-
-    rlr::serial_console::init();
+    rlr::serial_console::init(g_config);
 
     Serial.println();
     Serial.println("Setup complete.");
@@ -139,8 +139,8 @@ void setup() {
 // -------------------------------------------------------------------
 void loop() {
     rlr::transport::tick();
-    // rlr::telemetry::tick(g_config);      // (Phase 5)
-    // rlr::lxmf_presence::tick(g_config);  // (Phase 5)
+    rlr::telemetry::tick(g_config);
+    rlr::lxmf_presence::tick(g_config);
     rlr::led::heartbeat_tick(g_config);
     rlr::serial_console::tick();
 

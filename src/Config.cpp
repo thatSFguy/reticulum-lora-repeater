@@ -13,6 +13,7 @@
 #include "Config.h"
 #include "Arduino.h"
 #include <string.h>
+#include <stdlib.h>
 
 #include <Bytes.h>
 #include <Utilities/OS.h>
@@ -203,17 +204,123 @@ void load_or_defaults(Config& out) {
 
 // --- set_field / print_fields ------------------------------------
 //
-// Phase 4 SerialConsole work. Not implemented in Phase 3 because the
-// serial console doesn't exist yet. Stubs below keep the API surface
-// stable.
+// Drives the CONFIG GET / CONFIG SET <key> <val> commands in
+// SerialConsole. Keys are flat dotless names matching the Config
+// struct field names. Boolean flag bits are exposed as individual
+// keys (telemetry / lxmf / heartbeat) that set/clear bits inside
+// `flags`. On any parse/range failure set_field() returns false
+// without mutating cfg — the caller reports ERR to the user and the
+// staging record stays coherent.
+
+static bool streq(const char* a, const char* b) {
+    return strcmp(a, b) == 0;
+}
+
+// Parse a boolean token: 0/1, true/false, on/off, yes/no.
+static bool parse_bool(const char* v, bool& out) {
+    if (streq(v, "1") || streq(v, "true") || streq(v, "on")  || streq(v, "yes")) { out = true;  return true; }
+    if (streq(v, "0") || streq(v, "false")|| streq(v, "off") || streq(v, "no") ) { out = false; return true; }
+    return false;
+}
 
 bool set_field(Config& cfg, const char* key, const char* value) {
-    (void)cfg; (void)key; (void)value;
+    if (!key || !value) return false;
+
+    if (streq(key, "display_name")) {
+        size_t n = strlen(value);
+        if (n == 0 || n >= sizeof(cfg.display_name)) return false;
+        memset(cfg.display_name, 0, sizeof(cfg.display_name));
+        memcpy(cfg.display_name, value, n);
+        return true;
+    }
+    if (streq(key, "freq_hz")) {
+        char* end = nullptr;
+        unsigned long v = strtoul(value, &end, 10);
+        if (end == value || *end != '\0') return false;
+        if (v < 100000000UL || v > 1100000000UL) return false;
+        cfg.freq_hz = (uint32_t)v;
+        return true;
+    }
+    if (streq(key, "bw_hz")) {
+        char* end = nullptr;
+        unsigned long v = strtoul(value, &end, 10);
+        if (end == value || *end != '\0') return false;
+        if (v < 7800UL || v > 500000UL) return false;
+        cfg.bw_hz = (uint32_t)v;
+        return true;
+    }
+    if (streq(key, "sf")) {
+        char* end = nullptr;
+        long v = strtol(value, &end, 10);
+        if (end == value || *end != '\0') return false;
+        if (v < 7 || v > 12) return false;
+        cfg.sf = (uint8_t)v;
+        return true;
+    }
+    if (streq(key, "cr")) {
+        char* end = nullptr;
+        long v = strtol(value, &end, 10);
+        if (end == value || *end != '\0') return false;
+        if (v < 5 || v > 8) return false;
+        cfg.cr = (uint8_t)v;
+        return true;
+    }
+    if (streq(key, "txp_dbm")) {
+        char* end = nullptr;
+        long v = strtol(value, &end, 10);
+        if (end == value || *end != '\0') return false;
+        if (v < -9 || v > 22) return false;
+        cfg.txp_dbm = (int8_t)v;
+        return true;
+    }
+    if (streq(key, "batt_mult")) {
+        char* end = nullptr;
+        float v = strtof(value, &end);
+        if (end == value || *end != '\0') return false;
+        if (v <= 0.0f || v > 10.0f) return false;
+        cfg.batt_mult = v;
+        return true;
+    }
+    if (streq(key, "tele_interval_ms")) {
+        char* end = nullptr;
+        unsigned long v = strtoul(value, &end, 10);
+        if (end == value || *end != '\0') return false;
+        cfg.tele_interval_ms = (uint32_t)v;
+        return true;
+    }
+    if (streq(key, "lxmf_interval_ms")) {
+        char* end = nullptr;
+        unsigned long v = strtoul(value, &end, 10);
+        if (end == value || *end != '\0') return false;
+        cfg.lxmf_interval_ms = (uint32_t)v;
+        return true;
+    }
+    if (streq(key, "telemetry") || streq(key, "lxmf") || streq(key, "heartbeat")) {
+        bool b;
+        if (!parse_bool(value, b)) return false;
+        uint8_t bit = streq(key, "telemetry") ? CONFIG_FLAG_TELEMETRY
+                    : streq(key, "lxmf")      ? CONFIG_FLAG_LXMF
+                                              : CONFIG_FLAG_HEARTBEAT;
+        if (b) cfg.flags |=  bit;
+        else   cfg.flags &= ~bit;
+        return true;
+    }
     return false;
 }
 
 void print_fields(const Config& cfg) {
-    (void)cfg;
+    Serial.print("display_name=");     Serial.println(cfg.display_name);
+    Serial.print("freq_hz=");          Serial.println(cfg.freq_hz);
+    Serial.print("bw_hz=");            Serial.println(cfg.bw_hz);
+    Serial.print("sf=");               Serial.println(cfg.sf);
+    Serial.print("cr=");               Serial.println(cfg.cr);
+    Serial.print("txp_dbm=");          Serial.println(cfg.txp_dbm);
+    Serial.print("batt_mult=");        Serial.println(cfg.batt_mult, 4);
+    Serial.print("tele_interval_ms="); Serial.println(cfg.tele_interval_ms);
+    Serial.print("lxmf_interval_ms="); Serial.println(cfg.lxmf_interval_ms);
+    Serial.print("telemetry=");        Serial.println((cfg.flags & CONFIG_FLAG_TELEMETRY) ? 1 : 0);
+    Serial.print("lxmf=");             Serial.println((cfg.flags & CONFIG_FLAG_LXMF)      ? 1 : 0);
+    Serial.print("heartbeat=");        Serial.println((cfg.flags & CONFIG_FLAG_HEARTBEAT) ? 1 : 0);
 }
 
 }} // namespace rlr::config
