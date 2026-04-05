@@ -4,7 +4,7 @@ A living document of known failure modes and their fixes, distilled
 from the Faketec bring-up work that preceded this project and from
 subsequent second-board validation work.
 
-## The twelve-bug boot cascade
+## The thirteen-bug boot cascade
 
 When bringing up a new nRF52 + SX1262 board for the first time, these
 are the failure modes you'll hit. They cascade — each one hides the
@@ -68,6 +68,25 @@ or `pin: 0 forever`:
     RadioLib (used by Meshtastic) always does reset-before-probe,
     which is why the same `nrf52_promicro_diy_tcxo` Meshtastic build
     works on both modules. Commit `28b2179`.
+13. **`onReceive(cb)` called after `receive()` → silent RX drop.**
+    `sx126x::onReceive()` does two load-bearing things: sends
+    `OP_SET_IRQ_FLAGS_6X` to route the SX1262's internal `RX_DONE`
+    IRQ to the DIO1 pin, and `attachInterrupt()`s the host-side
+    handler on that pin. `sx126x::receive()` merely enters continuous
+    RX mode — it does *not* touch IRQ masks. If you call `receive()`
+    first and `onReceive()` after, the chip enters RX with undefined
+    IRQ routing and the host with no attached interrupt, so every
+    packet arrives and completes *silently* with nothing to catch
+    it. The sibling's `startRadio()` gets the order right by calling
+    `LoRa->onReceive(receive_callback)` before `lora_receive()`.
+    Discovered when the newly-ported Wio-SX1262 board had `radio=up`
+    but `pin: 0` forever despite known peers on the air. Fix:
+    `Radio::begin()` no longer calls `s_lora.receive()` — it leaves
+    the chip in STANDBY. A new `Radio::start_rx()` is called by
+    `main::setup()` AFTER `Transport::init()` has registered the
+    RX callback via the driver's `onReceive()`. This splits the
+    three stages (configure → register callback → enter RX) into
+    three explicit calls with a mandatory ordering.
 
 Each bug is invisible until the previous one is fixed. The correct
 debugging strategy is a non-blocking serial trace loop that polls

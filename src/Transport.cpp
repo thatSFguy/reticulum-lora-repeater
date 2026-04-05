@@ -197,7 +197,16 @@ bool init(const Config& cfg) {
     Serial.println("Transport: registering filesystem...");
     RNS::Utilities::OS::register_filesystem(s_filesystem);
 
-    // Register the ISR so the sx126x driver notifies us on RX done.
+    // Register the RX callback BEFORE the radio enters continuous RX
+    // mode. sx126x::onReceive() does two load-bearing things:
+    //   1. Sends OP_SET_IRQ_FLAGS_6X to configure which chip-internal
+    //      IRQ events (RX_DONE, etc.) route to which DIO pin. Without
+    //      this the DIO1 line never goes high on packet reception.
+    //   2. attachInterrupt()s the host-side handler on DIO1.
+    // Both must happen before radio::start_rx() is called from
+    // main.cpp::setup(). If the chip enters RX first and we register
+    // the callback after, packets arrive but nothing sees them.
+    Serial.println("Transport: registering RX callback...");
     rlr::radio::driver().onReceive(&on_radio_receive);
 
     // Create and register the LoRaInterface. RNS::Interface's

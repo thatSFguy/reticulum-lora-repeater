@@ -76,12 +76,16 @@ bool begin(const Config& cfg) {
     s_lora.setTxPower((int)cfg.txp_dbm);      // SX1262: outputPin arg ignored
     s_lora.enableCrc();
 
-    // Enter continuous RX mode. The driver also drives RXEN high
-    // before entering RX if pin_rxen is configured.
-    s_lora.receive();
-
+    // IMPORTANT: do NOT call s_lora.receive() here. The chip's IRQ
+    // routing (which internal events fire on which DIO pin) and the
+    // host-side DIO1 interrupt handler are both configured by a later
+    // s_lora.onReceive(callback) call from Transport::init(). If we
+    // entered continuous RX now, packets would arrive on a chip with
+    // unconfigured IRQ masks and a host with no attached interrupt,
+    // so every received packet would be silently discarded. See
+    // docs/TROUBLESHOOTING.md item #13.
     s_online = true;
-    Serial.print("Radio: online @ ");
+    Serial.print("Radio: configured @ ");
     Serial.print(cfg.freq_hz);
     Serial.print(" Hz, BW=");
     Serial.print(cfg.bw_hz);
@@ -91,7 +95,23 @@ bool begin(const Config& cfg) {
     Serial.print(cfg.cr);
     Serial.print(", TXP=");
     Serial.print(cfg.txp_dbm);
-    Serial.println(" dBm");
+    Serial.println(" dBm (standby — awaiting start_rx)");
+    return true;
+}
+
+bool start_rx() {
+    if (!s_online) {
+        Serial.println("Radio: start_rx() called before begin()");
+        return false;
+    }
+    // Enter continuous RX mode. The driver also drives RXEN high
+    // before entering RX when pin_rxen is configured. By the time this
+    // is called, Transport::init() has already registered its RX
+    // callback via s_lora.onReceive(), so both the chip's IRQ mask
+    // routing (RX_DONE → DIO1) and the host-side interrupt handler
+    // are in place.
+    s_lora.receive();
+    Serial.println("Radio: entering continuous RX");
     return true;
 }
 

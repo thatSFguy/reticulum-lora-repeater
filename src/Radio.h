@@ -19,9 +19,19 @@ namespace rlr { namespace radio {
 bool init_hardware();
 
 // Apply the runtime Config's frequency/BW/SF/CR/TXP to the radio and
-// enter continuous RX mode. Call after init_hardware() and after any
-// config change. Returns true on success.
+// leave it in STANDBY. Call after init_hardware() and after any
+// config change. Does NOT enter continuous RX — call start_rx() for
+// that, AFTER the receive callback has been registered via the
+// driver's onReceive() method. Returns true on success.
 bool begin(const Config& cfg);
+
+// Enter continuous RX mode. Must be called after (a) begin() has
+// configured the chip and (b) the receive callback has been wired via
+// the driver's onReceive() method (which configures the chip's IRQ
+// routing from RX_DONE to DIO1 AND attaches the host-side interrupt
+// handler — both must happen before we put the chip into RX or
+// packets arrive silently).
+bool start_rx();
 
 // Query whether the radio is currently online and receiving.
 bool online();

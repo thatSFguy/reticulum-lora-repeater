@@ -86,13 +86,23 @@ void setup() {
     Serial.println(" dBm");
 
     // --- Radio + Reticulum transport ---
-    // Order matters: VEXT + SPI + chip probe first, then apply config
-    // to the live radio, then start the Reticulum transport stack on
-    // top of it. If any step fails we still enter loop() so the
-    // serial console is available for diagnosis.
+    // Strict order:
+    //   1. init_hardware()  — VEXT + SPI pins + chip reset + sync-word probe
+    //   2. begin(cfg)       — configure chip (freq/BW/SF/CR/TXP/CRC), leave in STANDBY
+    //   3. transport::init()— filesystem, register RX callback (wires chip IRQ
+    //                          mask routing and host DIO1 interrupt BEFORE the
+    //                          chip ever enters RX mode), start Reticulum
+    //   4. radio::start_rx()— NOW enter continuous RX. Must come after step 3.
+    //
+    // If any step fails we still enter loop() so the serial console is
+    // available for diagnosis.
     if (rlr::radio::init_hardware()) {
         if (rlr::radio::begin(g_config)) {
-            rlr::transport::init(g_config);
+            if (rlr::transport::init(g_config)) {
+                rlr::radio::start_rx();
+            } else {
+                Serial.println("Setup: transport::init() failed — radio staying in standby");
+            }
         } else {
             Serial.println("Setup: radio::begin() failed — transport not started");
         }
