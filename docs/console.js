@@ -475,88 +475,68 @@ class RLRConsole {
   });
 
   // ---------------------------------------------------------------
-  //  GitHub Releases integration
+  //  Firmware manifest integration (same-origin, no CORS)
   // ---------------------------------------------------------------
   //
-  // On page load we hit the public Releases API and populate the
-  // version + board dropdowns from whatever's there. Asset filename
-  // convention matches the CI workflow's staging step:
+  // Previously we fetched the release list from the GitHub Releases
+  // API and downloaded asset bytes via browser_download_url (or the
+  // api.github.com asset endpoint). Both paths are redirect chains
+  // that end at release-assets.githubusercontent.com, which does
+  // NOT emit Access-Control-Allow-Origin headers, so the browser
+  // blocks fetch() from reading the response body even when the
+  // 200 OK comes through at the network layer.
   //
-  //   reticulum-lora-repeater-<board>-<tag>.zip
+  // Instead we publish the built firmware into docs/firmware/<tag>/
+  // from the CI release workflow, alongside a regenerated
+  // docs/firmware/manifest.json that lists every available tag +
+  // board combination. Both live on the same origin as this page
+  // (github.io Pages), so a relative-URL fetch is same-origin and
+  // the CORS check doesn't apply at all.
   //
-  // so parsing "board" out of an asset name is a single regex. Both
-  // version and board dropdowns are selection-driven: changing the
-  // version repopulates the board list; clicking Download fetches
-  // the selected asset with progress and hands the bytes to the
-  // shared setLoadedPackage() path.
+  // Manifest schema is documented in scripts/gen_firmware_manifest.py.
 
-  const REPO_OWNER = 'thatSFguy';
-  const REPO_NAME  = 'reticulum-lora-repeater';
-  const RELEASE_API = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases`;
-  const ASSET_NAME_RE = /^reticulum-lora-repeater-([^-]+)-(v.+)\.zip$/;
+  const MANIFEST_URL = 'firmware/manifest.json';
 
-  let releases = [];  // parsed API response, filtered to those with at least one matching .zip
+  let releases = [];  // parsed manifest.releases, newest first
 
   async function fetchReleases() {
-    relStatus.textContent = 'Fetching releases from GitHub…';
+    relStatus.textContent = 'Loading firmware manifest…';
     try {
-      const res = await fetch(RELEASE_API, { headers: { 'Accept': 'application/vnd.github+json' } });
+      // cache: 'no-cache' asks the browser to revalidate against
+      // the Pages CDN so a freshly-released tag shows up within a
+      // single refresh instead of waiting for cache expiry.
+      const res = await fetch(MANIFEST_URL, { cache: 'no-cache' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const raw = await res.json();
+      const manifest = await res.json();
 
-      // Keep only releases that actually have a flashable asset for
-      // at least one board. Drafts are hidden from unauthenticated
-      // callers automatically, so no extra filter needed there.
-      releases = raw
-        .map(r => {
-          const assets = (r.assets || [])
-            .map(a => {
-              const m = ASSET_NAME_RE.exec(a.name);
-              // Use the API asset URL, not browser_download_url.
-              // browser_download_url redirects through github.com
-              // which doesn't emit CORS headers on the 302, so
-              // fetch() from the browser fails with "Failed to
-              // fetch". The api.github.com/.../releases/assets/{id}
-              // endpoint with Accept: application/octet-stream
-              // returns the same bytes and IS CORS-friendly across
-              // the full redirect chain. Same trick Meshtastic and
-              // ESPHome's webflashers use.
-              return m ? { name: a.name, apiUrl: a.url, size: a.size, board: m[1] } : null;
-            })
-            .filter(Boolean);
-          return { tag: r.tag_name, name: r.name, prerelease: r.prerelease, published: r.published_at, assets };
-        })
-        .filter(r => r.assets.length > 0);
+      releases = (manifest.releases || []).filter(r => (r.boards || []).length > 0);
 
       if (releases.length === 0) {
-        relStatus.textContent = 'No flashable releases found on this repo.';
+        relStatus.textContent = 'No firmware releases published yet — use local upload instead.';
         relVersion.innerHTML = '<option>no releases</option>';
         return;
       }
 
-      // Populate version dropdown, newest first. Prefer non-prereleases
-      // at the top but keep them all in the list so testers can grab
-      // -rc / -test builds without switching flags.
-      releases.sort((a, b) => (b.published || '').localeCompare(a.published || ''));
+      // Manifest is already sorted newest-first by the generator,
+      // but do it again defensively in case someone hand-edits it.
       relVersion.innerHTML = '';
       for (const r of releases) {
         const opt = document.createElement('option');
         opt.value = r.tag;
-        const date = (r.published || '').slice(0, 10);
-        opt.textContent = r.prerelease ? `${r.tag} (prerelease, ${date})` : `${r.tag} (${date})`;
+        opt.textContent = r.prerelease ? `${r.tag} (prerelease)` : r.tag;
         relVersion.appendChild(opt);
       }
 
       // Default selection: the newest non-prerelease if any exist,
-      // otherwise just the newest overall.
+      // otherwise just the newest overall (first entry).
       const stable = releases.find(r => !r.prerelease);
       relVersion.value = (stable || releases[0]).tag;
       relVersion.disabled = false;
       repopulateBoardDropdown();
-      relStatus.textContent = `Loaded ${releases.length} release(s).`;
+      relStatus.textContent = `Loaded ${releases.length} release(s) from manifest.`;
     } catch (e) {
-      relStatus.textContent = 'Could not fetch releases: ' + e.message + ' — use local upload instead.';
-      log('err', 'release fetch failed: ' + e.message);
+      relStatus.textContent = 'Could not load manifest: ' + e.message + ' — use local upload instead.';
+      log('err', 'manifest fetch failed: ' + e.message);
       relVersion.innerHTML = '<option>unavailable</option>';
     }
   }
@@ -565,10 +545,10 @@ class RLRConsole {
     const r = releases.find(x => x.tag === relVersion.value);
     relBoard.innerHTML = '';
     if (!r) { relBoard.disabled = true; btnLoadRelease.disabled = true; return; }
-    for (const a of r.assets) {
+    for (const b of r.boards) {
       const opt = document.createElement('option');
-      opt.value = a.board;
-      opt.textContent = a.board;
+      opt.value = b.name;
+      opt.textContent = b.name;
       relBoard.appendChild(opt);
     }
     relBoard.disabled       = false;
@@ -580,25 +560,20 @@ class RLRConsole {
   btnLoadRelease.addEventListener('click', async () => {
     const r = releases.find(x => x.tag === relVersion.value);
     if (!r) return;
-    const asset = r.assets.find(a => a.board === relBoard.value);
-    if (!asset) return;
+    const board = r.boards.find(b => b.name === relBoard.value);
+    if (!board || !board.zip_path) return;
 
     btnLoadRelease.disabled = true;
-    relStatus.textContent = `Downloading ${asset.name}…`;
+    relStatus.textContent = `Downloading ${board.zip_path}…`;
     try {
-      // Accept: application/octet-stream tells the API asset
-      // endpoint to return the binary (via a CORS-friendly 302)
-      // instead of the JSON asset metadata it serves by default.
-      const res = await fetch(asset.apiUrl, {
-        headers: { 'Accept': 'application/octet-stream' },
-      });
+      // Same-origin relative fetch — no CORS involved at all.
+      const res = await fetch(board.zip_path);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       // Stream the response so we can show download progress.
-      // Content-Length may be absent after the S3 redirect on some
-      // CDNs — we fall back to an indeterminate byte counter in
-      // that case rather than failing.
-      const total   = parseInt(res.headers.get('Content-Length') || '0', 10) || asset.size || 0;
+      // Pages sends Content-Length for static files so the progress
+      // bar is determinate; fall back to manifest size if not.
+      const total   = parseInt(res.headers.get('Content-Length') || '0', 10) || board.zip_size || 0;
       const reader  = res.body.getReader();
       const chunks  = [];
       let received  = 0;
@@ -610,9 +585,9 @@ class RLRConsole {
         received += value.length;
         if (total > 0) {
           const pct = Math.floor(100 * received / total);
-          relStatus.textContent = `Downloading ${asset.name}: ${received} / ${total} B (${pct}%)`;
+          relStatus.textContent = `Downloading: ${received} / ${total} B (${pct}%)`;
         } else {
-          relStatus.textContent = `Downloading ${asset.name}: ${received} B`;
+          relStatus.textContent = `Downloading: ${received} B`;
         }
       }
 
@@ -621,8 +596,8 @@ class RLRConsole {
       for (const c of chunks) { buf.set(c, offset); offset += c.length; }
 
       const pkg = await RLRDfu.DfuPackage.fromArrayBuffer(buf.buffer);
-      setLoadedPackage(pkg, `${asset.board} ${r.tag}`);
-      relStatus.textContent = `Loaded ${asset.name} (${received} B).`;
+      setLoadedPackage(pkg, `${board.name} ${r.tag}`);
+      relStatus.textContent = `Loaded ${board.zip_path.split('/').pop()} (${received} B).`;
     } catch (e) {
       relStatus.textContent = 'Download failed: ' + e.message;
       log('err', 'release download failed: ' + e.message);

@@ -133,3 +133,68 @@ jobs:
             within ~500 ms) before flashing over serial. The Adafruit
             nRF52 bootloader exposes a different USB CDC device than
             the application firmware.
+
+  # --------------------------------------------------------------------
+  #  publish-to-pages — copies the built firmware into docs/firmware/
+  #  so the webflasher can fetch it same-origin (no CORS headaches).
+  #
+  #  This runs once per tag push after every matrix build finishes,
+  #  downloads all board artifacts in one go, stages them under
+  #  docs/firmware/<tag>/, regenerates docs/firmware/manifest.json,
+  #  and pushes the result back to master as a single commit. The
+  #  workflow isn't triggered by pushes to master (only tags +
+  #  workflow_dispatch), so this back-commit doesn't create an
+  #  infinite CI loop.
+  # --------------------------------------------------------------------
+  publish-to-pages:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout master (not the tag — we're committing to master)
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Download all board artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: downloaded-artifacts
+          pattern: firmware-*
+
+      - name: Stage firmware under docs/firmware/<tag>/
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          TARGET="docs/firmware/${TAG}"
+          mkdir -p "${TARGET}"
+          # actions/download-artifact lays each artifact out under
+          # downloaded-artifacts/<artifact-name>/. Flatten everything
+          # into the target directory.
+          find downloaded-artifacts -type f \( -name '*.zip' -o -name '*.hex' \) \
+            -exec cp -v {} "${TARGET}/" \;
+          ls -la "${TARGET}"
+
+      - name: Regenerate manifest
+        run: python scripts/gen_firmware_manifest.py
+
+      - name: Commit and push
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/firmware/
+          if git diff --cached --quiet; then
+            echo "No firmware changes to commit."
+            exit 0
+          fi
+          git commit -m "ci: publish ${GITHUB_REF_NAME} firmware to docs/firmware/"
+          git push origin HEAD:master
