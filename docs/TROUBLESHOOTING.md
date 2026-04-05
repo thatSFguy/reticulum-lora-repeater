@@ -122,7 +122,73 @@ a new SX1262-based board.
 Each bug in this cascade is invisible until the previous one is
 fixed — except in this case where #15 was invisible because of
 how closely its symptom matched #12/#13/#14 and we kept chasing
-the driver layer instead of the hardware layer. The correct
+the driver layer instead of the hardware layer.
+
+## Known compatibility gap — upstream Reticulum ratchet announces
+
+This is **not** a bug in this repo, but will show up in logs and
+confuse a new user so it's worth documenting here.
+
+### Symptom
+
+Log lines like:
+
+    [DBG] Received invalid announce for <hash>: Destination mismatch.
+    [---] Transport::inbound: Packet is announce for local destination, not processing
+
+appear when the node hears an announce from a peer running
+**upstream Reticulum ≥ 0.7** (stock RNode firmware with the current
+release, NomadNet, Sideband, Meshchat host nodes). Despite the
+scary-sounding "invalid" wording, the packet is logged at `[DBG]`
+severity (lowest) and dropped safely.
+
+### Root cause
+
+Reticulum 0.7 added **forward-secrecy ratchet keys** to the announce
+wire format. The announce payload now carries additional ratchet
+public-key material, and the destination-hash derivation formula
+was extended to incorporate it. microReticulum (attermann's C++
+port) has partial stub support — see the `// CBA RATCHET` / `TODO`
+comment in `microReticulum/src/Packet.cpp:353-357` — but
+`Identity::validate_announce()` still parses the announce under
+the pre-ratchet byte layout. The Ed25519 signature validates
+successfully (since it's just verifying whatever bytes were signed),
+but the local reconstruction `expected_hash = sha256(name_hash ||
+identity.hash)[:16]` does not match the packet's stated
+`destination_hash`, because microReticulum is computing it without
+the ratchet context.
+
+### Impact
+
+| Peer type | Receive + forward data | Learn paths from their announces |
+|---|---|---|
+| Another microReticulum node (this repo or sibling) | ✅ | ✅ |
+| Upstream Reticulum ≥ 0.7 node | ✅ (if path known) | ❌ (announce rejected) |
+
+### Resolution options, in order of increasing cost
+
+1. **File an issue** at `github.com/attermann/microReticulum`
+   titled "Announce validation rejects ratchet-enabled announces
+   from upstream Reticulum 0.7+ (Destination mismatch)". Zero work
+   on our side; nudges the maintainer to prioritize ratchet support.
+2. **Wait for an upstream microReticulum release** with ratchet
+   support. When it lands, bump `lib_deps` in `platformio.ini`
+   and rebuild. Gets us compatibility "for free."
+3. **Patch microReticulum locally** by reading Python Reticulum's
+   current `Identity.py::validate_announce` and porting the
+   ratchet-aware derivation into the C++ port. Estimated 4-8 hours
+   because it requires understanding the new hash chain AND the
+   new signed-data layout.
+
+### Practical recommendation
+
+Accept and defer. The repeater still forwards data packets, still
+talks to other microReticulum nodes, and still does everything else
+correctly. The only thing that doesn't work is **auto-learning
+paths from upstream Reticulum 0.7+ announces**. For a deployment
+where all peers run microReticulum-family firmware (this repo, the
+sibling `microReticulum_Faketec_Repeater`, or other attermann-based
+builds), there is no visible impact. The correct
 debugging strategy is a non-blocking serial trace loop that polls
 the SX1262's IRQ status register outside of any critical section
 and prints on every state change. See the sibling project's

@@ -35,6 +35,74 @@ enable on E22/Wio SX1262 modules) and was validated at commit
 docs/TROUBLESHOOTING.md items #12-#15 for the rabbit-hole cascade
 that preceded the fix.
 
+## Known limitation — upstream Reticulum ratchet announces
+
+Announces from upstream RNodes running Reticulum ≥ 0.7 are received
+and cryptographically verified, but then rejected by microReticulum
+with `[DBG] Received invalid announce for <hash>: Destination
+mismatch.` This is NOT a bug in this repo.
+
+Root cause: Reticulum 0.7 added forward-secrecy "ratchet" keys to
+the announce wire format. Upstream RNodes emit these ratchet-enabled
+announces. microReticulum (attermann's C++ port) has partial stub
+support — the `RATCHETSIZE` constant is defined but
+`Identity::validate_announce()` still parses the announce under the
+pre-ratchet byte layout, so its local destination-hash reconstruction
+fails the consistency check even though the Ed25519 signature
+validates. See the `// CBA RATCHET ... TODO` comment in the libdeps
+copy of `microReticulum/src/Packet.cpp` for the explicit author
+acknowledgement.
+
+Impact on this firmware:
+
+- ✅ **Peer-to-peer with other microReticulum nodes** (this repo, or
+  `microReticulum_Faketec_Repeater`) — announces validate, paths
+  build correctly, full bidirectional routing.
+- ❌ **Auto-learning paths from upstream Reticulum 0.7+ peers** —
+  their announces are heard + verified but rejected at validation,
+  so `paths:` does not populate from them.
+- ✅ **Forwarding data packets to/from either type of peer** — data
+  packet framing hasn't changed in 0.7, so if a path is known (via
+  other means or a microReticulum peer), forwarding works fine.
+
+Resolution paths (in order of increasing effort):
+
+1. File an issue at github.com/attermann/microReticulum asking for
+   ratchet-aware announce parsing. No work on our side.
+2. Wait for an upstream microReticulum release that implements
+   ratchet, then bump `lib_deps` in our `platformio.ini`. Zero
+   work on our side once the release lands.
+3. Patch microReticulum locally to handle the new announce layout.
+   Requires reading Python Reticulum's `Identity.py::validate_announce`
+   carefully and porting the changes. Estimated 4-8 hours.
+
+For now: **accept and defer**. Phase 2 is complete. Full upstream
+interop is gated on an upstream library fix, not a bug in this repo's
+code. Revisit after Phase 3-5 land or when microReticulum publishes
+a ratchet-capable release.
+
+## Phase 5 subsystems (telemetry, LXMF presence, heartbeat)
+
+All three are **deliberately stubbed out** in the current firmware.
+`src/Telemetry.{h,cpp}`, `src/LxmfPresence.{h,cpp}`, and the
+telemetry/lxmf ticks in `main.cpp::loop()` are placeholders with
+TODO markers pointing at the sibling project's working implementations
+to copy. They were scheduled for Phase 5 (after Phase 3-4 provide
+the runtime Config and serial console they both depend on).
+
+The sibling project's `RNode_Firmware.ino` has ready-to-port code for:
+
+- `read_battery_mv()` — averaged ADC read on PIN_BATTERY with
+  configurable multiplier (Phase 3 field: `Config::batt_mult`)
+- `announce_telemetry()` — builds the ASCII `bat=N;up=N;hpf=N;ro=N;
+  rssi=N;nf=N` payload and calls `telemetry_destination.announce()`
+- `announce_lxmf_presence()` — hand-rolled msgpack encoder for
+  `[display_name_bytes, nil]` and the lxmf.delivery announce
+- The three periodic tick patterns (telemetry, lxmf presence,
+  LED heartbeat)
+
+Can be ported in an afternoon once Phase 3 lands Config persistence.
+
 Bench signals on both boards:
 
 - Firmware boots, prints banner, loads identity + path table from
