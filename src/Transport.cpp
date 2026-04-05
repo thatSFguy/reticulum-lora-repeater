@@ -29,19 +29,10 @@
 #include <Bytes.h>
 #include <Utilities/OS.h>
 
-// microStore filesystem backend for persistent identity + path table.
-// Top-level InternalFileSystem.h include is REQUIRED for PlatformIO's
-// LDF to discover the Adafruit framework-bundled library — without it
-// the transitive include inside microStore's adapter header isn't
-// scanned aggressively enough.
-#include <InternalFileSystem.h>
-#include <microStore/Adapters/InternalFSFileSystem.h>
-
-// File-scope microStore::FileSystem wrapping an InternalFS impl.
-// Lives at file scope so its shared_ptr stays alive for the lifetime
-// of the program; declaring it inside init() would leave a dead
-// pointer after init() returns.
-static microStore::FileSystem s_filesystem{microStore::Adapters::InternalFSFileSystem()};
+// The microStore FileSystem + its RNS::OS registration moved to
+// src/Storage.cpp in Phase 3 so Config::load_or_defaults() can run
+// before Transport::init(). Transport now assumes the filesystem is
+// already mounted + registered by the time init() is called.
 
 // Exposed counters — declared early so the LoRaInterface class below
 // can increment them. Read via transport::packets_in/out().
@@ -131,17 +122,11 @@ bool init(const Config& cfg) {
 
     RNS::set_log_callback(&on_rns_log);
 
-    // Mount and register the microStore filesystem BEFORE reticulum
-    // starts. microReticulum's library code reaches into
-    // RNS::Utilities::OS::get_filesystem() for identity, path_store,
-    // and announce cache persistence, and throws std::runtime_error
-    // if no backend is registered. init() is what actually runs
-    // InternalFS.begin() — the adapter constructor only stores
-    // configuration.
-    Serial.println("Transport: initializing filesystem...");
-    s_filesystem.init();
-    Serial.println("Transport: registering filesystem...");
-    RNS::Utilities::OS::register_filesystem(s_filesystem);
+    // The filesystem is already mounted and registered by
+    // rlr::storage::init() which main::setup() calls before us.
+    // microReticulum's Identity / path_store / announce-cache file ops
+    // resolve through RNS::Utilities::OS::get_filesystem() which
+    // returns the instance rlr::storage set up.
 
     // Create and register the LoRaInterface. RNS::Interface's
     // operator=(InterfaceImpl*) takes ownership of the raw pointer

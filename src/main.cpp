@@ -11,6 +11,7 @@
 
 #include <Arduino.h>
 #include "Config.h"
+#include "Storage.h"
 #include "Led.h"
 #include "Radio.h"
 #include "Transport.h"
@@ -70,7 +71,15 @@ void setup() {
 
     rlr::led::init();
 
+    // Mount the internal flash filesystem before anything that might
+    // touch persistent storage — specifically Config::load_or_defaults
+    // below needs it so /config.bin can be read or created. Transport
+    // also depends on it later, but storage::init() only needs to run
+    // once and it's idempotent from main's perspective.
+    rlr::storage::init();
+
     rlr::config::load_or_defaults(g_config);
+    Serial.println("---- Active config ----");
     Serial.print("  display_name: ");
     Serial.println(g_config.display_name);
     Serial.print("  freq: ");
