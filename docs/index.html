@@ -58,6 +58,12 @@
   #log .ok { color: var(--ok); }
   #log .err { color: var(--err); }
   #log .info { color: var(--muted); }
+  .progress { background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; height: 10px; overflow: hidden; margin-top: 8px; }
+  .progress > div { background: var(--accent); height: 100%; width: 0%; transition: width 0.1s linear; }
+  .stage-label { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: 6px; min-height: 16px; }
+  .file-drop { display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--panel-2); border: 1px dashed var(--border); border-radius: 5px; }
+  .file-drop input[type="file"] { flex: 1; color: var(--muted); font-size: 13px; }
+  .file-drop span { font-family: var(--mono); font-size: 12px; color: var(--muted); }
   .notice { background: #1b2233; border-left: 3px solid var(--warn); padding: 10px 14px; font-size: 13px; color: #d8dde8; border-radius: 4px; margin: 10px 0; }
   .notice.err { border-left-color: var(--err); }
   .notice.ok { border-left-color: var(--ok); }
@@ -95,13 +101,37 @@
 <div class="panel">
   <h2>What this does</h2>
   <p style="margin: 0; color: var(--muted); font-size: 13px;">
-    Connect over USB to a flashed Reticulum LoRa Repeater, read its
-    live status, edit the persistent Config, and calibrate the
-    battery ADC from a multimeter reading. Nothing touches flash
-    until you click <strong>Commit &amp; Reboot</strong>.
-    Over-the-air flashing from the browser is Phase 6b — for now,
-    build &amp; upload firmware with <code>pio run -e Faketec -t upload</code>.
+    Flash the Reticulum LoRa Repeater firmware onto a fresh board
+    straight from this page, then connect over USB to read its live
+    status, edit the persistent Config, and calibrate the battery ADC
+    from a multimeter reading. Nothing touches flash until you click
+    a Commit or Flash button.
   </p>
+</div>
+
+<div class="panel">
+  <h2>Flash firmware</h2>
+  <p style="margin: 0 0 12px 0; color: var(--muted); font-size: 13px;">
+    Put the board in <strong>bootloader mode</strong> first:
+    double-tap the reset button within ~500&nbsp;ms. The board will
+    re-enumerate as a different USB serial device — select that new
+    port in the picker below. Then pick a
+    <code>firmware.zip</code> (produced by
+    <code>pio run -e Faketec</code> at
+    <code>.pio/build/Faketec/firmware.zip</code>) and click Flash.
+  </p>
+  <div class="file-drop">
+    <input id="fw-file" type="file" accept=".zip,application/zip">
+    <span id="fw-info">no file selected</span>
+  </div>
+  <div class="actions">
+    <button id="btn-flash" disabled>Flash</button>
+    <span style="color: var(--muted); font-size: 12px; align-self: center;">
+      The Flash button talks to the Adafruit nRF52 serial DFU bootloader directly — the application console port is NOT the same port.
+    </span>
+  </div>
+  <div class="progress"><div id="fw-progress-bar"></div></div>
+  <div id="fw-stage" class="stage-label"></div>
 </div>
 
 <div id="live" class="hidden">
@@ -211,6 +241,9 @@
 
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="dfu.js"></script>
 <script src="console.js"></script>
 </body>
 </html>

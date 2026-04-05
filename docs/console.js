@@ -418,4 +418,85 @@ class RLRConsole {
   });
 
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  // ---------------------------------------------------------------
+  //  Flash panel — picks a firmware.zip, opens a SECOND serial port
+  //  (the bootloader CDC, not the application CDC the rest of this
+  //  page talks to), and drives dfu.js through an APPLICATION update.
+  // ---------------------------------------------------------------
+  const fwFile  = $('fw-file');
+  const fwInfo  = $('fw-info');
+  const btnFlash = $('btn-flash');
+  const fwBar   = $('fw-progress-bar');
+  const fwStage = $('fw-stage');
+
+  let selectedPackage = null;
+
+  fwFile.addEventListener('change', async () => {
+    const f = fwFile.files && fwFile.files[0];
+    if (!f) { selectedPackage = null; btnFlash.disabled = true; fwInfo.textContent = 'no file selected'; return; }
+    try {
+      selectedPackage = await RLRDfu.DfuPackage.fromFile(f);
+      const appSize = selectedPackage.firmware.length;
+      const initSize = selectedPackage.initPacket.length;
+      fwInfo.textContent = `${f.name} — app ${appSize} B, init ${initSize} B`;
+      btnFlash.disabled = false;
+      log('info', `package loaded: app=${appSize} bytes, init=${initSize} bytes`);
+    } catch (e) {
+      selectedPackage = null;
+      btnFlash.disabled = true;
+      fwInfo.textContent = 'error: ' + e.message;
+      log('err', 'package parse failed: ' + e.message);
+    }
+  });
+
+  btnFlash.addEventListener('click', async () => {
+    if (!selectedPackage) return;
+    if (!('serial' in navigator)) { log('err', 'Web Serial not available'); return; }
+
+    // If the console is currently connected, warn — it's almost
+    // certainly the application port, which is NOT the bootloader
+    // port. Force the user to disconnect so the port list in the
+    // picker is clean.
+    if (con.isConnected()) {
+      if (!confirm('Disconnect the console session before flashing? The bootloader is a different USB port than the application.')) return;
+      try { await con.disconnect(); } catch (e) {}
+      setConnected(false);
+    }
+
+    btnFlash.disabled = true;
+    fwFile.disabled   = true;
+    fwBar.style.width = '0%';
+    fwStage.textContent = 'Select the BOOTLOADER port in the picker...';
+
+    let dfuPort = null;
+    try {
+      dfuPort = await navigator.serial.requestPort();
+      await dfuPort.open({ baudRate: 115200, dataBits: 8, stopBits: 1, parity: 'none' });
+      log('info', '--- bootloader port opened ---');
+
+      await RLRDfu.dfuFlash(dfuPort, selectedPackage, {
+        onStage: (text) => {
+          fwStage.textContent = text;
+          log('info', '[dfu] ' + text);
+        },
+        onProgress: (sent, total) => {
+          const pct = Math.floor(100 * sent / total);
+          fwBar.style.width = pct + '%';
+        },
+        log,
+      });
+
+      fwBar.style.width = '100%';
+      fwStage.textContent = 'Flash complete — board is rebooting into the new firmware.';
+      log('ok', '--- flash complete ---');
+    } catch (e) {
+      fwStage.textContent = 'Flash failed: ' + e.message;
+      log('err', 'flash error: ' + e.message);
+    } finally {
+      try { if (dfuPort && dfuPort.readable) await dfuPort.close(); } catch (e) {}
+      btnFlash.disabled = false;
+      fwFile.disabled   = false;
+    }
+  });
 })();
