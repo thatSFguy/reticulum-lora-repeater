@@ -5,20 +5,42 @@ plan lives in the sibling project at
 `../microReticulum_Faketec_Repeater/reticulum_lora_repeater_PLAN.md`;
 this file just tracks "what's actually done right now."
 
-## Current state — end of Phase 2
+## Current state — end of Phase 2 (+ second-board validation)
 
-**Bench-verified working on real hardware** (Faketec, 2026-04-05):
+**Bench-verified working on TWO different hardware configurations**
+(2026-04-05):
+
+1. **Faketec** — Nice!Nano-style ProMicro clone + Ebyte E22-900M30S
+   (SX1262 with external PA, ~30 dBm antenna output)
+2. **Test board** — same ProMicro clone carrier + Seeed Wio-SX1262
+   (SX1262, ~22 dBm antenna, no external PA)
+
+Both run the **exact same firmware binary** from `[env:Faketec]`
+with the same `include/board/Faketec.h`. Per-module differences are
+entirely absorbed by the sx126x driver. This is the first real test
+of the one-header-per-board architecture and it passes.
+
+Bench signals on both boards:
 
 - Firmware boots, prints banner, loads identity + path table from
-  internal flash, registers LoRaInterface with Reticulum Transport,
-  receives + decodes + rebroadcasts mesh announces
+  internal flash (if present), registers LoRaInterface with
+  Reticulum Transport, receives + decodes + rebroadcasts mesh
+  announces
 - microStore segment rotation works across firmware upgrades
   (identity persisted from the sibling project's boot carried over
-  intact into this repo's first boot)
-- 3 path entries preserved from pre-existing `/path_store_0.dat`
-- Heap pool: 5% used / 90% free / 0% fragmented, 0 alloc faults
+  intact into this repo's first boot on the Faketec)
+- On a virgin flash (test board), a fresh identity is generated
+  and persisted on first boot
+- Heap pool: 5% used / 90-91% free / 0% fragmented, 0 alloc faults
 - `[alive]` heartbeat firing every 10 s as expected
 - LED heartbeat pulse working
+- Identical BSS size across both boards (21924 B) — proves shared
+  code path, no board-conditional state being compiled in
+
+**Bug discovered and fixed during second-board validation:**
+`sx126x::reset()` must be called before `preInit()` probe. The E22
+tolerates skipping this step; the Wio does not. See
+`docs/TROUBLESHOOTING.md` item #12 and commit `28b2179`.
 
 ## Commits
 

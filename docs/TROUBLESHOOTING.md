@@ -1,9 +1,10 @@
 # Troubleshooting
 
 A living document of known failure modes and their fixes, distilled
-from the Faketec bring-up work that preceded this project.
+from the Faketec bring-up work that preceded this project and from
+subsequent second-board validation work.
 
-## The eleven-bug boot cascade
+## The twelve-bug boot cascade
 
 When bringing up a new nRF52 + SX1262 board for the first time, these
 are the failure modes you'll hit. They cascade — each one hides the
@@ -55,6 +56,18 @@ or `pin: 0 forever`:
     at boot — which happens to be Faketec's VEXT_EN pin, so the
     radio is *actively de-powered* before setup() runs. Re-assert
     HIGH in setup() with a 10 ms settle delay.
+12. **SX1262 probe before reset.** Discovered only when porting to a
+    second radio module (Seeed Wio-SX1262 on the same ProMicro
+    carrier as Faketec). The Ebyte E22-900M30S comes out of cold
+    power-on with its sync-word register readable and matching the
+    datasheet default (`0x1424`), so `preInit()` succeeds without
+    any prior reset pulse. The Wio-SX1262 doesn't — its SX1262 needs
+    an explicit active-low reset pulse (~10 ms) before it'll return
+    the datasheet defaults over SPI. Fix: call `sx126x::reset()`
+    between `setPins()` and `preInit()` in `Radio::init_hardware()`.
+    RadioLib (used by Meshtastic) always does reset-before-probe,
+    which is why the same `nrf52_promicro_diy_tcxo` Meshtastic build
+    works on both modules. Commit `28b2179`.
 
 Each bug is invisible until the previous one is fixed. The correct
 debugging strategy is a non-blocking serial trace loop that polls
