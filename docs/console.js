@@ -594,7 +594,7 @@ class RLRConsole {
     if (!board || !board.zip_path) return;
 
     btnLoadRelease.disabled = true;
-    relStatus.textContent = `Downloading ${board.zip_path}…`;
+    relStatus.textContent = `Fetching ${board.zip_path}…`;
     try {
       // Same-origin relative fetch — no CORS involved at all.
       const res = await fetch(board.zip_path);

@@ -112,19 +112,26 @@
 <div class="panel">
   <h2>Flash firmware</h2>
   <p style="margin: 0 0 12px 0; color: var(--muted); font-size: 13px;">
-    Pick a version below, click <strong>Download</strong>, then click
-    <strong>Enter DFU mode</strong> to put the running board into
-    bootloader mode automatically. Finally click <strong>Flash</strong>
-    and select the new bootloader port that appears in the picker.
-    If <em>Enter DFU mode</em> doesn't work (rare), fall back to
-    double-tapping the reset button on the board.
+    Pick a version below and click <strong>Select firmware</strong>.
+    Then put the board in bootloader mode by
+    <strong>double-tapping the reset button</strong> on the board
+    (within ~500&nbsp;ms) — the device will re-enumerate as a new
+    USB serial port. Click <strong>Flash</strong> and pick that new
+    port in the browser's picker.
   </p>
   <div class="row">
     <div class="field"><label>Version</label>
       <select id="rel-version" disabled><option>loading releases…</option></select></div>
     <div class="field narrow"><label>Board</label>
       <select id="rel-board" disabled></select></div>
-    <div><button id="btn-load-release" class="secondary" disabled>Download</button></div>
+    <div>
+      <!-- The &nbsp; label is a vertical spacer so the button sits
+           at the same y-position as the selects do below their
+           labels. Without it the flex row center-aligns the button
+           and it visibly floats above the dropdown baselines. -->
+      <label>&nbsp;</label>
+      <button id="btn-load-release" class="secondary" disabled>Select firmware</button>
+    </div>
   </div>
   <div id="rel-status" class="stage-label"></div>
 
@@ -137,10 +144,16 @@
 
   <div id="fw-info" class="stage-label" style="margin-top: 14px;">no firmware loaded</div>
   <div class="actions">
-    <button id="btn-dfu" class="secondary" disabled>Enter DFU mode</button>
+    <!-- btn-dfu is hidden for now: the 1200-baud touch doesn't
+         reliably put the Faketec into bootloader mode, same issue
+         as flasher.meshcore.dev. The JS handler in console.js is
+         still wired so we can un-hide it later once we've worked
+         out the touch quirk. For now the reset-button fallback is
+         the documented path. -->
+    <button id="btn-dfu" class="secondary" style="display: none;" disabled>Enter DFU mode</button>
     <button id="btn-flash" disabled>Flash</button>
     <span style="color: var(--muted); font-size: 12px; align-self: center;">
-      DFU button triggers bootloader via 1200-baud touch on the application port. Flash talks to a different bootloader port.
+      The bootloader is a different USB port than the running application. Double-tap reset, then select the new port that appears.
     </span>
   </div>
   <div class="progress"><div id="fw-progress-bar"></div></div>
