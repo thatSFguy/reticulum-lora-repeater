@@ -191,15 +191,22 @@ int read_pending(uint8_t* buf, size_t bufsize) {
     s_rx_flag = false;
 
     size_t len = s_radio.getPacketLength();
-    if (len == 0 || len > bufsize) {
-        // Bad length — log it (bad-length packets are a symptom of
-        // marginal reception or RX pipeline corruption) and re-enter
-        // RX anyway so we don't get stuck.
-        Serial.print("Radio: RX bad-length len=");
+    if (len == 0) {
+        // len=0 is normal after our own TX: the SX1262's DIO1 can
+        // fire a spurious RX_DONE during the TX→RX transition, and
+        // the flag clear in transmit() didn't catch it (race). Not
+        // a real packet — silently re-enter RX and return.
+        s_radio.startReceive();
+        return 0;
+    }
+    if (len > bufsize) {
+        // Genuinely oversized — log it as a real error, it might be
+        // a sign of marginal reception or RX pipeline corruption.
+        Serial.print("Radio: RX oversize len=");
         Serial.println(len);
         int sr = s_radio.startReceive();
         if (sr != RADIOLIB_ERR_NONE) {
-            Serial.print("Radio: startReceive() failed after bad-length, code ");
+            Serial.print("Radio: startReceive() failed after oversize, code ");
             Serial.println(sr);
         }
         return -1;
@@ -280,6 +287,17 @@ int transmit(const uint8_t* buf, size_t len) {
     // for us).
     int state = s_radio.transmit(const_cast<uint8_t*>(buf), len);
     s_radio.startReceive();
+    // Clear the ISR flag AFTER re-entering RX. The SX1262's DIO1
+    // line can glitch during the TX→Standby→RX transition, causing
+    // a spurious "packet received" IRQ. Without this clear, the
+    // next read_pending() call sees s_rx_flag=true, reads len=0
+    // from getPacketLength() (no real packet), and wastes a cycle.
+    // Worse, the spurious IRQ might leave the chip's IRQ status
+    // register in a half-cleared state that delays or blocks the
+    // next real RX_DONE edge. Clearing here is safe because any
+    // real packet arriving after startReceive() will re-set the
+    // flag via the ISR.
+    s_rx_flag = false;
     return (state == RADIOLIB_ERR_NONE) ? (int)len : -1;
 }
 
