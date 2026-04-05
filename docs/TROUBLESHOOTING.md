@@ -4,7 +4,7 @@ A living document of known failure modes and their fixes, distilled
 from the Faketec bring-up work that preceded this project and from
 subsequent second-board validation work.
 
-## The thirteen-bug boot cascade
+## The fifteen-bug boot cascade
 
 When bringing up a new nRF52 + SX1262 board for the first time, these
 are the failure modes you'll hit. They cascade — each one hides the
@@ -68,27 +68,61 @@ or `pin: 0 forever`:
     RadioLib (used by Meshtastic) always does reset-before-probe,
     which is why the same `nrf52_promicro_diy_tcxo` Meshtastic build
     works on both modules. Commit `28b2179`.
-13. **`onReceive(cb)` called after `receive()` → silent RX drop.**
-    `sx126x::onReceive()` does two load-bearing things: sends
-    `OP_SET_IRQ_FLAGS_6X` to route the SX1262's internal `RX_DONE`
-    IRQ to the DIO1 pin, and `attachInterrupt()`s the host-side
-    handler on that pin. `sx126x::receive()` merely enters continuous
-    RX mode — it does *not* touch IRQ masks. If you call `receive()`
-    first and `onReceive()` after, the chip enters RX with undefined
-    IRQ routing and the host with no attached interrupt, so every
-    packet arrives and completes *silently* with nothing to catch
-    it. The sibling's `startRadio()` gets the order right by calling
-    `LoRa->onReceive(receive_callback)` before `lora_receive()`.
-    Discovered when the newly-ported Wio-SX1262 board had `radio=up`
-    but `pin: 0` forever despite known peers on the air. Fix:
-    `Radio::begin()` no longer calls `s_lora.receive()` — it leaves
-    the chip in STANDBY. A new `Radio::start_rx()` is called by
-    `main::setup()` AFTER `Transport::init()` has registered the
-    RX callback via the driver's `onReceive()`. This splits the
-    three stages (configure → register callback → enter RX) into
-    three explicit calls with a mandatory ordering.
+13. **`onReceive(cb)` called after `receive()` → theoretical silent
+    RX drop.** Caught while investigating #15 (below). Turned out
+    NOT to be the actual cause of the silent RX we were chasing
+    (the LNA on the external RF switch chain was the real bug), but
+    is still a real ordering issue that the fix for left in place
+    because it's correct — `setPacketReceivedAction` and
+    `startReceive` should run in that order. Historical note only.
+14. **`handleDio0IfPending()` poll not called from the main loop.**
+    The sibling-project sx126x driver uses a deferred-dispatch ISR
+    pattern on nRF52 where the interrupt handler only sets a flag
+    and the user callback runs later from the main loop via
+    `handleDio0IfPending()`. Also turned out not to be the root
+    cause of the Phase 2 silent RX (see #15), but was a genuine
+    omission in the initial port. Made obsolete when we switched
+    from the ported sx126x driver to RadioLib in commit `1115b74`
+    — RadioLib doesn't use deferred dispatch, so the whole concept
+    disappears.
+15. **External LNA RXEN not driven on SX1262 modules with an RF
+    switch chain.** THE ACTUAL Phase 2 silent-RX bug. Ebyte E22
+    and Seeed Wio-SX1262 modules have a T/R switch + external LNA
+    between the SX1262 chip and the antenna. The chip's DIO2 pin
+    drives the TXEN side of the switch during transmission (handled
+    by `setDio2AsRfSwitch(true)`), but the LNA on the RX side is
+    gated by a discrete RXEN pin that must be driven HIGH by an
+    MCU GPIO during receive. If you only call `setDio2AsRfSwitch()`
+    and not `setRfSwitchPins(RXEN, TXEN_or_RADIOLIB_NC)`, TX works
+    fine but the RX LNA is permanently off — the chip is in
+    continuous RX with the antenna effectively disconnected. The
+    symptom is `pin: 0` forever on an otherwise-healthy radio,
+    with no error output from the driver because the chip itself
+    is doing what it was told. MeshCore's `CustomSX1262.h`
+    `std_init()` gets this right conditionally on `SX126X_RXEN`
+    being defined in the board header. Fix: add
+    `s_radio.setRfSwitchPins(PIN_LORA_RXEN, RADIOLIB_NC)` in
+    `Radio::begin()` alongside the existing `setDio2AsRfSwitch()`
+    call, guarded on `PIN_LORA_RXEN` being defined in the board
+    header. Commit `084c9c9`. This was the bug that finally
+    unblocked Phase 2 — pin=0 → pin=1 within 27 seconds of
+    reflashing on both Wio-SX1262 and Faketec.
 
-Each bug is invisible until the previous one is fixed. The correct
+Items #12, #13, and #14 were rabbit holes chased while investigating
+what turned out to be #15. The lesson: when `pin: 0` with no error
+output, the FIRST thing to check is whether the LNA is actually
+being powered during RX. The symptom ("chip configured, in RX mode,
+no receive events") is consistent with every driver-side bug we
+imagined, but the cheapest check is the RF switch config. We
+discovered it by reading MeshCore's working SX1262 init sequence
+side-by-side with ours — see docs/ADDING_A_BOARD.md for the
+recommended "compare against MeshCore" workflow when bringing up
+a new SX1262-based board.
+
+Each bug in this cascade is invisible until the previous one is
+fixed — except in this case where #15 was invisible because of
+how closely its symptom matched #12/#13/#14 and we kept chasing
+the driver layer instead of the hardware layer. The correct
 debugging strategy is a non-blocking serial trace loop that polls
 the SX1262's IRQ status register outside of any critical section
 and prints on every state change. See the sibling project's

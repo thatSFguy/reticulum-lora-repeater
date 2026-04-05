@@ -5,7 +5,7 @@ plan lives in the sibling project at
 `../microReticulum_Faketec_Repeater/reticulum_lora_repeater_PLAN.md`;
 this file just tracks "what's actually done right now."
 
-## Current state — end of Phase 2 (+ second-board validation)
+## Current state — end of Phase 2 (RadioLib-based radio, validated RX)
 
 **Bench-verified working on TWO different hardware configurations**
 (2026-04-05):
@@ -17,8 +17,23 @@ this file just tracks "what's actually done right now."
 
 Both run the **exact same firmware binary** from `[env:Faketec]`
 with the same `include/board/Faketec.h`. Per-module differences are
-entirely absorbed by the sx126x driver. This is the first real test
-of the one-header-per-board architecture and it passes.
+entirely absorbed by RadioLib + the board header macros. This is
+the first real test of the one-header-per-board architecture and
+it passes.
+
+**Important caveat from the Phase 2 retrospective:** an earlier
+"Phase 2 done" claim (commit `f416735`) was wrong. It was based on
+the Faketec's microStore path table surviving across firmware
+upgrades — the 3 persisted path entries from the old sibling
+firmware made it look like live RX was working, but a clean boot
+on the Wio-SX1262 (which had no prior state) proved the RX path
+was actually broken on both boards. The real fix landed in
+commit `084c9c9` (`setRfSwitchPins(RXEN)` for the external LNA
+enable on E22/Wio SX1262 modules) and was validated at commit
+`084c9c9+` when the Wio board received a path-response packet
+27 seconds after reflash (`pin: 0 → pin: 1`). See
+docs/TROUBLESHOOTING.md items #12-#15 for the rabbit-hole cascade
+that preceded the fix.
 
 Bench signals on both boards:
 
