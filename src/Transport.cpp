@@ -43,6 +43,11 @@
 // pointer after init() returns.
 static microStore::FileSystem s_filesystem{microStore::Adapters::InternalFSFileSystem()};
 
+// Exposed counters — declared early so the LoRaInterface class below
+// can increment them. Read via transport::packets_in/out().
+static uint32_t s_packets_in  = 0;
+static uint32_t s_packets_out = 0;
+
 // ---------------------------------------------------------------------
 //  LoRaInterface — RNS InterfaceImpl that bridges to rlr::radio.
 // ---------------------------------------------------------------------
@@ -81,6 +86,8 @@ protected:
             int n = rlr::radio::transmit(data.data(), data.size());
             if (n < 0) {
                 Serial.println("LoRaInterface::send_outgoing: radio::transmit() error");
+            } else {
+                s_packets_out++;
             }
             RNS::InterfaceImpl::handle_outgoing(data);
         }
@@ -101,9 +108,8 @@ static RNS::Reticulum  s_reticulum(RNS::Type::NONE);
 static RNS::Interface  s_lora_interface(RNS::Type::NONE);
 static bool            s_initialized = false;
 
-// Exposed counters
-static uint32_t s_packets_in  = 0;
-static uint32_t s_packets_out = 0;
+// (s_packets_in and s_packets_out are declared above the LoRaInterface
+// class so its send_outgoing() method can increment s_packets_out.)
 
 // RNS log callback — mirrors Reticulum's log stream to Serial so
 // library-level problems are visible during bring-up.

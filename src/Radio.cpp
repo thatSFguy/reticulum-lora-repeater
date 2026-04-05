@@ -100,14 +100,40 @@ bool begin(const Config& cfg) {
         return false;
     }
 
-    // DIO2 drives the external RF switch on Ebyte E22 and Wio-SX1262
-    // modules — RadioLib handles the TX/RX antenna path automatically
-    // once this is set.
+    // Belt-and-suspenders CRC enable. RadioLib's begin() enables CRC
+    // by default on SX1262 but MeshCore calls this explicitly and
+    // it costs nothing.
+    s_radio.setCRC(1);
+
+    // DIO2 drives the external *TX* path (T/R switch's TXEN input)
+    // on Ebyte E22 and Wio-SX1262 modules. This handles the TX
+    // antenna path automatically during transmission.
     #if RADIO_DIO2_AS_RF_SWITCH
         state = s_radio.setDio2AsRfSwitch(true);
         if (state != RADIOLIB_ERR_NONE) {
             Serial.print("Radio: setDio2AsRfSwitch failed, RadioLib code ");
             Serial.println(state);
+        }
+    #endif
+
+    // CRITICAL for E22 / Wio-SX1262 modules: the *RX* path goes
+    // through an external LNA that is gated by a discrete RXEN pin
+    // driven by the MCU. Without setRfSwitchPins() telling RadioLib
+    // which GPIO to drive HIGH during RX, the LNA stays off and the
+    // chip is in RX mode but effectively deaf. This was the actual
+    // cause of Phase 2's "radio=up, pin=0 forever" symptom — DIO2
+    // alone handles only the TX path, not RX.
+    //
+    // MeshCore's CustomSX1262.h std_init() does the same thing
+    // conditionally on SX126X_RXEN being defined in the board header.
+    // See docs/TROUBLESHOOTING.md items #12-#15 for the full context.
+    #if defined(PIN_LORA_RXEN) && PIN_LORA_RXEN >= 0
+        {
+            uint32_t tx_pin = RADIOLIB_NC;
+            #if defined(PIN_LORA_TXEN) && PIN_LORA_TXEN >= 0
+                tx_pin = (uint32_t)PIN_LORA_TXEN;
+            #endif
+            s_radio.setRfSwitchPins((uint32_t)PIN_LORA_RXEN, tx_pin);
         }
     #endif
 
