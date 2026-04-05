@@ -34,6 +34,28 @@
 #include <Bytes.h>
 #include <Utilities/OS.h>
 
+// microStore filesystem backend for persistent identity + path table.
+// Matches the sibling project's pattern at RNode_Firmware.ino:319-320:
+// declare the FileSystem as a file-scope global so its InternalFS
+// impl initializes during static init, then register it with
+// RNS::Utilities::OS before reticulum.start() so every file op
+// inside the library resolves to a real backend.
+//
+// The top-level <InternalFileSystem.h> include is REQUIRED (not
+// redundant): PlatformIO's LDF in chain/deep mode won't discover
+// the Adafruit framework-bundled InternalFileSystem library from a
+// transitive include inside microStore's adapter header. Keeping
+// the #include here at src/ scope makes the LDF pick it up the same
+// way the sibling project gets it from Utilities.h:23.
+#include <InternalFileSystem.h>
+#include <microStore/Adapters/InternalFSFileSystem.h>
+
+// File-scope microStore::FileSystem wrapping an InternalFS impl.
+// WARNING: keep this at file scope. If you construct it inside
+// Transport::init() instead, it goes out of scope when init() returns
+// and every subsequent library file op dereferences a dead shared_ptr.
+static microStore::FileSystem s_filesystem{microStore::Adapters::InternalFSFileSystem()};
+
 // ---------------------------------------------------------------------
 //  RX staging — the sx126x driver's onReceive callback runs in ISR
 //  context and cannot safely allocate or call into Reticulum. We latch
@@ -157,6 +179,13 @@ bool init(const Config& cfg) {
     (void)cfg;  // Phase 3+ will drive telemetry intervals etc. from cfg
 
     RNS::set_log_callback(&on_rns_log);
+
+    // Hand the microReticulum library a filesystem backend BEFORE
+    // reticulum.start() runs — identity persistence, path_store init,
+    // and announce cache all resolve through OS::get_filesystem() and
+    // throw std::runtime_error if no backend is registered.
+    Serial.println("Transport: registering filesystem...");
+    RNS::Utilities::OS::register_filesystem(s_filesystem);
 
     // Register the ISR so the sx126x driver notifies us on RX done.
     rlr::radio::driver().onReceive(&on_radio_receive);

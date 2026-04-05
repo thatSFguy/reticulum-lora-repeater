@@ -37,9 +37,23 @@ static rlr::Config g_config{};
 // -------------------------------------------------------------------
 void setup() {
     Serial.begin(115200);
-    // Give USB CDC a moment to enumerate before we print the banner.
+    // Give USB CDC more time to enumerate. nRF52 TinyUSB doesn't replay
+    // buffered bytes to a late-attach monitor, so if the user starts
+    // `pio device monitor` after the wait elapses they miss the banner.
+    // Extending to 8 s gives plenty of headroom for a human to attach.
+    // We also emit a dot every 500 ms so anyone already attached sees
+    // continuous proof that setup() is running.
     uint32_t wait_start = millis();
-    while (!Serial && (millis() - wait_start) < 1500) { delay(10); }
+    uint32_t last_dot = 0;
+    while (!Serial && (millis() - wait_start) < 8000) {
+        if (millis() - last_dot >= 500) {
+            last_dot = millis();
+            Serial.print('.');
+            Serial.flush();
+        }
+        delay(10);
+    }
+    Serial.println();
 
     Serial.println();
     Serial.println("=====================================================");
@@ -110,4 +124,21 @@ void loop() {
     // rlr::lxmf_presence::tick(g_config);  // (Phase 5)
     rlr::led::heartbeat_tick(g_config);
     rlr::serial_console::tick();
+
+    // Phase 2 bench-test aid: a once-every-10-seconds "alive" marker
+    // so a late-attach monitor has unambiguous proof the firmware is
+    // running. Remove once the SerialConsole's STATUS command (Phase 4)
+    // gives the user a real readout on demand.
+    static uint32_t last_alive_ms = 0;
+    uint32_t now = millis();
+    if ((int32_t)(now - last_alive_ms) >= 10000) {
+        last_alive_ms = now;
+        Serial.print("[alive] uptime=");
+        Serial.print(now / 1000);
+        Serial.print("s radio=");
+        Serial.print(rlr::radio::online() ? "up" : "down");
+        Serial.print(" pin=");
+        Serial.print(rlr::transport::packets_in());
+        Serial.println();
+    }
 }
