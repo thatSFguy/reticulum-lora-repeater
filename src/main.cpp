@@ -149,16 +149,8 @@ void loop() {
         Serial.print(rlr::radio::online() ? "up" : "down");
         Serial.print(" pin=");
         Serial.print(rlr::transport::packets_in());
-        // ISR breakdown: fire=total entries, bad=wrong size,
-        // drop=staging buf full, ok=latched to staging
-        Serial.print(" isr=");
-        Serial.print(rlr::transport::rx_isr_fires());
-        Serial.print("/bad=");
-        Serial.print(rlr::transport::rx_isr_bad_size());
-        Serial.print("/drop=");
-        Serial.print(rlr::transport::rx_isr_dropped());
-        Serial.print("/ok=");
-        Serial.print(rlr::transport::rx_isr_latched());
+        Serial.print(" pout=");
+        Serial.print(rlr::transport::packets_out());
         Serial.println();
     }
 }

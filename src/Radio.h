@@ -1,48 +1,56 @@
 #pragma once
-// src/Radio.h — SX1262 radio lifecycle and parameter application.
-// Wraps src/drivers/sx126x.{h,cpp} and consumes board constants from
-// the pre-included board header.
+// src/Radio.h — SX1262 radio lifecycle and packet I/O, implemented on
+// top of RadioLib's SX1262 class. Board-specific pin numbers, TCXO
+// voltage, RF-switch wiring, and VEXT rail come from the pre-included
+// board header (include/board/<name>.h); this file is board-agnostic.
+//
+// This header replaces an earlier sibling-project sx126x driver port
+// that turned out to have too many per-board quirks and deferred-
+// dispatch gotchas. RadioLib is what Meshtastic/MeshCore use and
+// handles all the low-level chip init, DIO1 interrupt routing, and
+// callback plumbing transparently. See docs/TROUBLESHOOTING.md
+// items #12-#14 for the failure modes that pushed us to switch.
 
 #include "Config.h"
-
-// Forward-declare so Radio.h doesn't have to pull in the full driver
-// header. Consumers that need the driver (Transport::LoRaInterface)
-// include src/drivers/sx126x.h directly.
-class sx126x;
+#include <stdint.h>
+#include <stddef.h>
 
 namespace rlr { namespace radio {
 
-// Assert PIN_VEXT_EN (if the board has it), initialise SPI with the
-// board's pin map, reset + preInit the SX1262, verify the chip
-// responds to a sync-word read. Returns true if the radio is online
-// and ready for begin().
+// Assert VEXT_EN (if the board has it), configure SPI pins, construct
+// the RadioLib Module + SX1262 objects. Does NOT talk to the chip
+// yet — that's begin()'s job. Returns true on success.
 bool init_hardware();
 
-// Apply the runtime Config's frequency/BW/SF/CR/TXP to the radio and
-// leave it in STANDBY. Call after init_hardware() and after any
-// config change. Does NOT enter continuous RX — call start_rx() for
-// that, AFTER the receive callback has been registered via the
-// driver's onReceive() method. Returns true on success.
+// Apply the runtime Config's freq/BW/SF/CR/TXP, TCXO voltage (from
+// RADIO_TCXO_VOLTAGE_MV in the board header), sync word, and DIO2-
+// as-RF-switch setting, and leave the radio in STANDBY. Returns
+// true on success.
 bool begin(const Config& cfg);
 
-// Enter continuous RX mode. Must be called after (a) begin() has
-// configured the chip and (b) the receive callback has been wired via
-// the driver's onReceive() method (which configures the chip's IRQ
-// routing from RX_DONE to DIO1 AND attaches the host-side interrupt
-// handler — both must happen before we put the chip into RX or
-// packets arrive silently).
+// Wire the RX interrupt handler and enter continuous RX mode.
+// Call after begin(). Returns true on success.
 bool start_rx();
 
-// Query whether the radio is currently online and receiving.
+// Query whether the radio passed begin() (i.e. is configured).
 bool online();
 
-// Force the radio into standby (used by shutdown paths).
+// Put the radio into sleep/standby. Reversible via begin().
 void stop();
 
-// Access the underlying driver instance. Intended only for
-// Transport's LoRaInterface which needs to call beginPacket/write/
-// endPacket/available/read directly on the driver. Everything else
-// should go through the functions above.
-sx126x& driver();
+// Called from loop(): returns true if the ISR has latched a packet
+// that is ready to be drained via read_pending().
+bool rx_pending();
+
+// Drain a pending RX packet into `buf`. Returns the number of bytes
+// read on success, 0 if no packet is ready, -1 on error. Always
+// re-enters continuous RX on the chip before returning so subsequent
+// packets are captured. `bufsize` should be at least 256 for safety.
+int read_pending(uint8_t* buf, size_t bufsize);
+
+// Synchronously transmit a packet. Blocks until the chip reports
+// TX done, then re-enters continuous RX. Returns the number of bytes
+// transmitted on success, -1 on error.
+int transmit(const uint8_t* buf, size_t len);
 
 }} // namespace rlr::radio
