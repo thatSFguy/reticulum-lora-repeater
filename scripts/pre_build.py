@@ -213,4 +213,70 @@ def patch_microreticulum(env):
     print("pre_build: applied microReticulum ratchet patch to {}".format(target))
 
 
+# ---------------------------------------------------------------
+#  Patch 2 — fix identity hash length (16 → 32 bytes)
+#
+#  microReticulum's Identity::update_hashes uses truncated_hash()
+#  (SHA-256 truncated to 16 bytes / TRUNCATED_HASHLENGTH) for the
+#  identity hash. Upstream Python Reticulum uses full_hash()
+#  (full 32-byte SHA-256 / HASHLENGTH). When validate_announce
+#  reconstructs a destination hash from name_hash + identity.hash(),
+#  the hash_material is 26 bytes (10+16) vs upstream's 42 (10+32),
+#  producing a different SHA-256 → "Destination mismatch" on EVERY
+#  announce from upstream peers, ratchet or not.
+#
+#  Same bug in the other direction: our Destination constructor
+#  uses identity.hash() to compute our own destination hashes, so
+#  Sideband/MeshChat can't validate OUR announces either.
+#
+#  Fix: one-word replacement in update_hashes() — truncated_hash
+#  → full_hash. The Bytes _hash field is dynamically sized, so
+#  16→32 is transparent. Both directions of interop fix at once.
+# ---------------------------------------------------------------
+
+HASH_PATCH_MARKER = "// RLR_IDENTITY_HASH_PATCH"
+
+def patch_identity_hash(env):
+    project_dir = env["PROJECT_DIR"]
+    env_name    = env["PIOENV"]
+    target = os.path.join(
+        project_dir, ".pio", "libdeps", env_name,
+        "microReticulum", "src", "Identity.h",
+    )
+    if not os.path.exists(target):
+        print("pre_build: microReticulum not yet fetched — identity hash patch skipped this pass")
+        return
+
+    with open(target, "r", encoding="utf-8", newline="") as f:
+        source = f.read()
+
+    source = source.replace("\r\n", "\n")
+
+    if HASH_PATCH_MARKER in source:
+        print("pre_build: identity hash patch already applied (marker present)")
+        return
+
+    original = '_object->_hash = truncated_hash(get_public_key());'
+    replacement = (
+        '_object->_hash = full_hash(get_public_key()); '
+        + HASH_PATCH_MARKER
+    )
+
+    if original not in source:
+        raise RuntimeError(
+            "pre_build: could not locate truncated_hash call in Identity.h "
+            "update_hashes(). Upstream microReticulum may have changed — "
+            "update the patch in scripts/pre_build.py."
+        )
+
+    patched = source.replace(original, replacement, 1)
+    assert HASH_PATCH_MARKER in patched
+
+    with open(target, "w", encoding="utf-8", newline="") as f:
+        f.write(patched)
+
+    print("pre_build: applied identity hash patch (truncated_hash->full_hash) to {}".format(target))
+
+
 patch_microreticulum(env)  # noqa: F821
+patch_identity_hash(env)   # noqa: F821
