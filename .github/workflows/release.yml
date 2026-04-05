@@ -73,7 +73,16 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-assets
-          VERSION="${GITHUB_REF_NAME:-manual-$(date +%Y%m%d-%H%M%S)}"
+          # On tag push GITHUB_REF_NAME is the tag (v0.1.0-test, ...).
+          # On workflow_dispatch it's the branch name (master) which
+          # would produce misleading artifact names, so substitute a
+          # timestamp so dispatch runs are obviously smoke-test builds
+          # rather than anything release-adjacent.
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            VERSION="manual-$(date +%Y%m%d-%H%M%S)"
+          else
+            VERSION="${GITHUB_REF_NAME}"
+          fi
           BOARD="${{ matrix.board }}"
           BASE="reticulum-lora-repeater-${BOARD}-${VERSION}"
           cp ".pio/build/${BOARD}/firmware.zip" "release-assets/${BASE}.zip"
