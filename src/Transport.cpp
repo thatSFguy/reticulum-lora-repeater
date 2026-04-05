@@ -184,6 +184,16 @@ bool init(const Config& cfg) {
     // reticulum.start() runs — identity persistence, path_store init,
     // and announce cache all resolve through OS::get_filesystem() and
     // throw std::runtime_error if no backend is registered.
+    //
+    // IMPORTANT: s_filesystem.init() must be called explicitly. The
+    // InternalFSFileSystem adapter's constructor does NOT mount the
+    // internal flash partition — it only stores pins. init() is what
+    // actually runs InternalFS.begin(). Without this call every file
+    // op into the (unmounted) littlefs fails and the firmware boots
+    // in complete silence. Every microReticulum example does this
+    // same two-step init + register dance.
+    Serial.println("Transport: initializing filesystem...");
+    s_filesystem.init();
     Serial.println("Transport: registering filesystem...");
     RNS::Utilities::OS::register_filesystem(s_filesystem);
 
