@@ -1,0 +1,22 @@
+.pio/
+.pioenvs/
+.piolibdeps/
+.vscode/
+.clangd/
+.cache/
+.DS_Store
+.claude/
+*.pyc
+__pycache__/
+Release/
+Debug/
+build/
+
+# Webflasher built assets (populated by CI from releases)
+webflasher/firmware/*.zip
+webflasher/firmware/*.hex
+
+# Local planning notes
+refactor.md
+Faketec.md
+SCRATCHPAD.md
