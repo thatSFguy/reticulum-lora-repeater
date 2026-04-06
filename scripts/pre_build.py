@@ -431,6 +431,25 @@ patch_announce_diag(env)          # noqa: F821
 #  Post-build: generate UF2 from HEX for all boards
 # ---------------------------------------------------------------
 
+# ---------------------------------------------------------------
+#  Install custom linker script for XIAO nRF52840 (S140 v7)
+# ---------------------------------------------------------------
+# The custom board JSON references nrf52840_s140_v7.ld by name.
+# PlatformIO looks for it in the BSP's linker directory. Copy our
+# version there if it doesn't exist yet (needed on CI where the
+# local copy from the dev machine isn't present).
+_bsp_linker_dir = os.path.join(
+    env.subst("$PROJECT_PACKAGES_DIR"),  # noqa: F821
+    "framework-arduinoadafruitnrf52", "cores", "nRF5", "linker"
+)
+_v7_ld_src = os.path.join(env.subst("$PROJECT_DIR"), "linker", "nrf52840_s140_v7.ld")  # noqa: F821
+_v7_ld_dst = os.path.join(_bsp_linker_dir, "nrf52840_s140_v7.ld")
+if os.path.exists(_v7_ld_src) and not os.path.exists(_v7_ld_dst):
+    import shutil
+    os.makedirs(_bsp_linker_dir, exist_ok=True)
+    shutil.copy2(_v7_ld_src, _v7_ld_dst)
+    print("pre_build: installed nrf52840_s140_v7.ld to BSP linker directory")
+
 # Ensure scripts/ is in sys.path so hex2uf2 can be found on CI.
 # PlatformIO extra_scripts are exec()'d, not imported, so __file__
 # is not defined. Use the project dir from the env instead.
