@@ -431,10 +431,13 @@ patch_announce_diag(env)          # noqa: F821
 #  Post-build: generate UF2 from HEX for all boards
 # ---------------------------------------------------------------
 
-# Ensure scripts/ is in sys.path so hex2uf2 can be found on CI
-# (PlatformIO doesn't guarantee the script's directory is on sys.path)
+# Ensure scripts/ is in sys.path so hex2uf2 can be found on CI.
+# PlatformIO extra_scripts are exec()'d, not imported, so __file__
+# is not defined. Use the project dir from the env instead.
 import sys as _sys
-_sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_scripts_dir = os.path.join(env.subst("$PROJECT_DIR"), "scripts")  # noqa: F821
+if _scripts_dir not in _sys.path:
+    _sys.path.insert(0, _scripts_dir)
 import hex2uf2 as _hex2uf2  # noqa: E402
 
 def _generate_uf2(source, target, env):
