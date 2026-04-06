@@ -259,46 +259,105 @@ def patch_microreticulum(env):
 HASH_PATCH_MARKER = "// RLR_IDENTITY_HASH_PATCH"
 
 def patch_identity_hash(env):
+    # REVERTED: upstream Python Reticulum uses truncated_hash (16 bytes)
+    # for identity.hash, NOT full_hash (32 bytes). The original
+    # microReticulum code was correct. Our "fix" changing truncated_hash
+    # to full_hash made hash_material 42 bytes instead of 26, producing
+    # a guaranteed "Destination mismatch" on every announce.
+    #
+    # Confirmed by 3 independent investigations of upstream RNS/Identity.py:
+    #   def update_hashes(self):
+    #       self.hash = Identity.truncated_hash(self.get_public_key())
+    #       # = SHA256(public_key)[:TRUNCATED_HASHLENGTH//8] = [:16] = 16 bytes
+    #
+    # This function is now a no-op. Kept as documentation of the failed
+    # hypothesis so we don't retry it.
+    print("pre_build: identity hash patch SKIPPED (reverted — upstream uses truncated_hash, 16 bytes)")
+
+
+# ---------------------------------------------------------------
+#  Patch 3 — enable diagnostic TRACEF in validate_announce
+#
+#  Uncomment the two TRACEF lines that print expected_hash vs
+#  destination_hash so we can diagnose "Destination mismatch"
+#  at a glance. These are in the unpatched portion of the
+#  function (after our ratchet extraction patch but before the
+#  hash comparison).
+# ---------------------------------------------------------------
+
+DIAG_PATCH_MARKER = "// RLR_DIAG_PATCH"
+
+def patch_validate_announce_diag(env):
     project_dir = env["PROJECT_DIR"]
     env_name    = env["PIOENV"]
     target = os.path.join(
         project_dir, ".pio", "libdeps", env_name,
-        "microReticulum", "src", "Identity.h",
+        "microReticulum", "src", "Identity.cpp",
     )
     if not os.path.exists(target):
-        print("pre_build: microReticulum not yet fetched — identity hash patch skipped this pass")
         return
 
     with open(target, "r", encoding="utf-8", newline="") as f:
         source = f.read()
-
     source = source.replace("\r\n", "\n")
 
-    if HASH_PATCH_MARKER in source:
-        print("pre_build: identity hash patch already applied (marker present)")
+    if DIAG_PATCH_MARKER in source:
+        print("pre_build: validate_announce diagnostic patch already applied")
         return
 
-    original = '_object->_hash = truncated_hash(get_public_key());'
+    # We need two patches in Identity.cpp:
+    # (a) Save name_hash BEFORE the << mutation corrupts it
+    # (b) Compute expected_hash with BOTH 16-byte and 32-byte identity
+    #     hash to determine which one the sender uses
+
+    # Patch (a): save original name_hash before hash_material construction
+    original_a = (
+        '\t\t\t\tBytes hash_material = name_hash << announced_identity.hash();'
+    )
+    replacement_a = (
+        '\t\t\t\tBytes orig_name_hash = name_hash;  ' + DIAG_PATCH_MARKER + '\n'
+        '\t\t\t\tBytes hash_material = name_hash << announced_identity.hash();'
+    )
+
+    if original_a not in source:
+        print("pre_build: validate_announce hash_material line not found for diag patch (a)")
+        return
+    source = source.replace(original_a, replacement_a, 1)
+
+    # Patch (b): diagnostic prints + dual expected_hash computation
+    original = (
+        '\t\t\t\t//TRACEF("Identity::validate_announce: destination_hash: %s", packet.destination_hash().toHex().c_str());\n'
+        '\t\t\t\t//TRACEF("Identity::validate_announce: expected_hash:    %s", expected_hash.toHex().c_str());'
+    )
     replacement = (
-        '_object->_hash = full_hash(get_public_key()); '
-        + HASH_PATCH_MARKER
+        '\t\t\t\t' + DIAG_PATCH_MARKER + '\n'
+        '\t\t\t\t{\n'
+        '\t\t\t\t\t// Test BOTH 16-byte and 32-byte identity hash hypotheses\n'
+        '\t\t\t\t\tBytes id_hash_16 = truncated_hash(announced_identity.get_public_key());\n'
+        '\t\t\t\t\tBytes id_hash_32 = full_hash(announced_identity.get_public_key());\n'
+        '\t\t\t\t\tBytes hm16 = orig_name_hash + id_hash_16;\n'
+        '\t\t\t\t\tBytes hm32 = orig_name_hash + id_hash_32;\n'
+        '\t\t\t\t\tBytes exp16 = full_hash(hm16).left(Type::Reticulum::TRUNCATED_HASHLENGTH/8);\n'
+        '\t\t\t\t\tBytes exp32 = full_hash(hm32).left(Type::Reticulum::TRUNCATED_HASHLENGTH/8);\n'
+        '\t\t\t\t\tTRACEF("DIAG destination_hash: %s", packet.destination_hash().toHex().c_str());\n'
+        '\t\t\t\t\tTRACEF("DIAG expected(id16):   %s  match=%d", exp16.toHex().c_str(), packet.destination_hash() == exp16);\n'
+        '\t\t\t\t\tTRACEF("DIAG expected(id32):   %s  match=%d", exp32.toHex().c_str(), packet.destination_hash() == exp32);\n'
+        '\t\t\t\t\tTRACEF("DIAG name_hash(orig):  %s (%zu bytes)", orig_name_hash.toHex().c_str(), orig_name_hash.size());\n'
+        '\t\t\t\t\tTRACEF("DIAG id_hash_16:       %s", id_hash_16.toHex().c_str());\n'
+        '\t\t\t\t\tTRACEF("DIAG id_hash_32:       %s", id_hash_32.toHex().c_str());\n'
+        '\t\t\t\t}'
     )
 
     if original not in source:
-        raise RuntimeError(
-            "pre_build: could not locate truncated_hash call in Identity.h "
-            "update_hashes(). Upstream microReticulum may have changed — "
-            "update the patch in scripts/pre_build.py."
-        )
+        print("pre_build: validate_announce diagnostic TRACEF lines not found (may be already uncommented or upstream changed)")
+        return
 
     patched = source.replace(original, replacement, 1)
-    assert HASH_PATCH_MARKER in patched
-
     with open(target, "w", encoding="utf-8", newline="") as f:
         f.write(patched)
+    print("pre_build: enabled validate_announce diagnostic TRACEFs")
 
-    print("pre_build: applied identity hash patch (truncated_hash->full_hash) to {}".format(target))
 
-
-patch_microreticulum(env)  # noqa: F821
-patch_identity_hash(env)   # noqa: F821
+patch_microreticulum(env)         # noqa: F821
+patch_identity_hash(env)          # noqa: F821
+patch_validate_announce_diag(env) # noqa: F821

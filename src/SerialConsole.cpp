@@ -21,6 +21,8 @@
 #include "Transport.h"
 #include "Radio.h"
 #include "Telemetry.h"
+#include "LxmfPresence.h"
+#include "Led.h"
 
 #include <Arduino.h>
 #include <string.h>
@@ -85,6 +87,7 @@ static void cmd_help() {
     Serial.println("  CONFIG REVERT              - reseed staging from live config");
     Serial.println("  CONFIG COMMIT              - persist staging + reboot");
     Serial.println("  CALIBRATE BATTERY <mv>     - derive batt_mult from measured voltage");
+    Serial.println("  ANNOUNCE                   - force LXMF + telemetry announce now");
     ok();
 }
 
@@ -237,6 +240,17 @@ static void dispatch(char* line) {
             return;
         }
         err("unknown CONFIG subcommand (try HELP)");
+        return;
+    }
+
+    // ANNOUNCE — force immediate LXMF presence + telemetry announce
+    if (strcmp(upper_copy, "ANNOUNCE") == 0) {
+        if (!rlr::radio::online()) { err("radio not online"); return; }
+        Serial.println("firing LXMF presence announce...");
+        rlr::lxmf_presence::announce_now(*s_live);
+        Serial.println("firing telemetry announce...");
+        rlr::telemetry::announce_now(*s_live);
+        ok();
         return;
     }
 
