@@ -170,7 +170,7 @@ jobs:
           # actions/download-artifact lays each artifact out under
           # downloaded-artifacts/<artifact-name>/. Flatten into a
           # single directory so gh release create can glob them.
-          find downloaded-artifacts -type f \( -name '*.zip' -o -name '*.hex' \) \
+          find downloaded-artifacts -type f \( -name '*.zip' -o -name '*.hex' -o -name '*.uf2' \) \
             -exec cp -v {} release-assets/ \;
           echo "Release assets staged:"
           ls -la release-assets/
