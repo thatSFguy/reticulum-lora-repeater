@@ -431,7 +431,11 @@ patch_announce_diag(env)          # noqa: F821
 #  Post-build: generate UF2 from HEX for all boards
 # ---------------------------------------------------------------
 
-import hex2uf2 as _hex2uf2  # noqa: E402 (scripts/ is on sys.path from import os above)
+# Ensure scripts/ is in sys.path so hex2uf2 can be found on CI
+# (PlatformIO doesn't guarantee the script's directory is on sys.path)
+import sys as _sys
+_sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import hex2uf2 as _hex2uf2  # noqa: E402
 
 def _generate_uf2(source, target, env):
     firmware_dir = env.subst("$BUILD_DIR")
