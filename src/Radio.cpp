@@ -105,6 +105,15 @@ bool begin(const Config& cfg) {
     // it costs nothing.
     s_radio.setCRC(1);
 
+    // Override sync word with control bits 0x34 instead of RadioLib's
+    // default 0x44. Both map to air-interface sync word 0x12, but
+    // some SX1276 receivers (including RNode firmware) can't decode
+    // packets from an SX1262 using 0x44 control bits. This is a known
+    // SX1262↔SX1276 interop issue documented in Semtech forums and
+    // RadioLib issues. 0x34 produces register value 0x1324 which is
+    // reliably received by SX1276 with sync word 0x12.
+    s_radio.setSyncWord(sync_word, 0x34);
+
     // DIO2 drives the external *TX* path (T/R switch's TXEN input)
     // on Ebyte E22 and Wio-SX1262 modules. This handles the TX
     // antenna path automatically during transmission.

@@ -358,6 +358,70 @@ def patch_validate_announce_diag(env):
     print("pre_build: enabled validate_announce diagnostic TRACEFs")
 
 
+# ---------------------------------------------------------------
+#  Patch 4 — enable outgoing announce diagnostic TRACEFs
+#
+#  Uncomment the TRACEF lines in Destination::announce() so we can
+#  see every field of our outgoing announce (dest hash, public key,
+#  name_hash, random_hash, app_data, signed_data, signature,
+#  announce_data). This is the missing diagnostic for the Sideband
+#  visibility bug — we need to see the exact bytes going on the wire.
+# ---------------------------------------------------------------
+
+ANNOUNCE_DIAG_MARKER = "// RLR_ANNOUNCE_DIAG_PATCH"
+
+def patch_announce_diag(env):
+    project_dir = env["PROJECT_DIR"]
+    env_name    = env["PIOENV"]
+    target = os.path.join(
+        project_dir, ".pio", "libdeps", env_name,
+        "microReticulum", "src", "Destination.cpp",
+    )
+    if not os.path.exists(target):
+        return
+
+    with open(target, "r", encoding="utf-8", newline="") as f:
+        source = f.read()
+    source = source.replace("\r\n", "\n")
+
+    if ANNOUNCE_DIAG_MARKER in source:
+        print("pre_build: announce diagnostic patch already applied")
+        return
+
+    # Uncomment the TRACEF lines for outgoing announce fields
+    pairs = [
+        ('//TRACEF("Destination::announce: hash:         %s"', 'TRACEF("Destination::announce: hash:         %s"'),
+        ('//TRACEF("Destination::announce: public key:   %s"', 'TRACEF("Destination::announce: public key:   %s"'),
+        ('//TRACEF("Destination::announce: name hash:    %s"', 'TRACEF("Destination::announce: name hash:    %s"'),
+        ('//TRACEF("Destination::announce: random hash:  %s"', 'TRACEF("Destination::announce: random hash:  %s"'),
+        ('//TRACEF("Destination::announce: app data:     %s"', 'TRACEF("Destination::announce: app data:     %s"'),
+        ('//TRACEF("Destination::announce: app data text:%s"', 'TRACEF("Destination::announce: app data text:%s"'),
+        ('//TRACEF("Destination::announce: signed data:  %s"', 'TRACEF("Destination::announce: signed data:  %s"'),
+        ('//TRACEF("Destination::announce: signature:    %s"', 'TRACEF("Destination::announce: signature:    %s"'),
+        ('//TRACEF("Destination::announce: announce_data:%s"', 'TRACEF("Destination::announce: announce_data:%s"'),
+    ]
+
+    patched = False
+    for old, new in pairs:
+        if old in source:
+            source = source.replace(old, new, 1)
+            patched = True
+
+    if patched:
+        # Add marker so we know this was applied
+        source = source.replace(
+            'Bytes signed_data;',
+            'Bytes signed_data; ' + ANNOUNCE_DIAG_MARKER,
+            1
+        )
+        with open(target, "w", encoding="utf-8", newline="") as f:
+            f.write(source)
+        print("pre_build: enabled outgoing announce diagnostic TRACEFs in Destination.cpp")
+    else:
+        print("pre_build: announce diagnostic TRACEF lines not found")
+
+
 patch_microreticulum(env)         # noqa: F821
 patch_identity_hash(env)          # noqa: F821
 patch_validate_announce_diag(env) # noqa: F821
+patch_announce_diag(env)          # noqa: F821
