@@ -7,21 +7,27 @@ your browser, configure over USB, and your node is on the air.
 **Web flasher:** https://thatSFguy.github.io/reticulum-lora-repeater/
 
 **Target user:** already running [Meshtastic](https://meshtastic.org/)
-or [MeshCore](https://github.com/ripplebiz/MeshCore) on a Nice!Nano-style
+or [MeshCore](https://github.com/ripplebiz/MeshCore) on an
 nRF52840 + SX1262 board, curious about Reticulum, and wants to try
 running a dedicated repeater without a toolchain install.
 
 ## Quick start
 
 1. Visit **https://thatSFguy.github.io/reticulum-lora-repeater/**
-2. Pick your board and version, click **Select firmware**
-3. Double-tap the reset button on the board to enter bootloader mode
+2. Pick your **board** and **version**, click **Select firmware**
+3. **Double-tap the reset button** on the board to enter bootloader mode
 4. Click **Flash** and pick the new port that appears
 5. After flashing, click **Connect** to open the serial console
 6. Edit your config (frequency, display name, TX power, etc.) and click **Commit & Reboot**
 
 The node boots, starts relaying Reticulum packets over LoRa, and
 announces itself on the mesh.
+
+### Deploying multiple nodes
+
+Configure one node, click **Export config** to save an `rlr-config.json`
+file. For each additional node: flash, connect, click **Import config**,
+change the display name, commit. Under 2 minutes per node after the first.
 
 ## What it is
 
@@ -51,12 +57,28 @@ announces itself on the mesh.
 
 | Board | Radio | Status |
 |---|---|---|
-| **Faketec** (Nice!Nano clone + Ebyte E22-900M30S) | SX1262 + ext PA | Bench-validated, shipping in releases |
-| **RAK4631** (WisBlock Core) | Integrated SX1262 | Builds green, shipping in releases, hardware validation pending |
-| XIAO nRF52840 + SX1262 | SX1262 | Stub header, future target |
+| **Faketec** (Nice!Nano clone + Ebyte E22-900M30S) | SX1262 + ext PA | Bench-validated |
+| **RAK4631** (WisBlock Core) | Integrated SX1262 | Shipping in releases |
+| **XIAO nRF52840 Kit** (Seeed XIAO + Wio-SX1262 daughter) | SX1262 | Shipping in releases |
+| **Heltec Mesh Node T114** | Integrated SX1262 | Shipping in releases |
+| **RAK3401 1-Watt** (WisBlock + 1W PA) | SX1262 + 1W PA | Shipping in releases |
 
-Adding a new board is one header file in `include/board/` plus one
-env block in `platformio.ini` — see `docs/ADDING_A_BOARD.md`.
+All five boards share the same firmware source — each board is just
+one header file in `include/board/`. Adding a new nRF52840 + SX1262
+board is a ~100-line header + one env block in `platformio.ini`.
+See `docs/ADDING_A_BOARD.md`.
+
+## Web flasher features
+
+The hosted web flasher at https://thatSFguy.github.io/reticulum-lora-repeater/ provides:
+
+- **Flash firmware** directly from the browser via Web Serial DFU — no toolchain needed
+- **Version + board selection** from a dropdown populated by the CI release pipeline
+- **Live serial console** with real-time log streaming (alive markers, Radio RX, debug output)
+- **Configuration form** with human-friendly units (MHz for frequency, minutes for intervals)
+- **One-step battery calibration** — enter a multimeter reading, firmware computes the multiplier
+- **Config export/import** — save and load `rlr-config.json` for fleet provisioning
+- **Per-packet radio diagnostics** — RSSI, SNR, packet type, and ratchet flag on every RX
 
 ## Serial console commands
 
@@ -86,10 +108,13 @@ pio run -e Faketec -t upload --upload-port COMxx
 pio device monitor -e Faketec --port COMxx
 ```
 
+Available build environments: `Faketec`, `RAK4631`, `XIAO_nRF52840`,
+`Heltec_T114`, `RAK3401`.
+
 ## CI / Releases
 
 Every tagged version (`v*`) triggers a GitHub Actions workflow that:
-1. Builds firmware for every board in the matrix (Faketec, RAK4631)
+1. Builds firmware for all five boards in parallel
 2. Creates a GitHub Release with `.zip` and `.hex` assets per board
 3. Publishes firmware to `docs/firmware/<tag>/` for the web flasher
 4. Regenerates the firmware manifest so the web flasher auto-discovers new versions
@@ -106,8 +131,8 @@ Every tagged version (`v*`) triggers a GitHub Actions workflow that:
 - **Liam Cottle** for
   [rnode-flasher](https://github.com/liamcottle/rnode-flasher) — the
   web flasher's DFU protocol implementation is based on his work
-- **Meshtastic** and **MeshCore** projects for the nRF52840 ProMicro
-  DIY variant pin maps and TCXO reference during initial bring-up
+- **Meshtastic** and **MeshCore** projects for nRF52840 variant pin
+  maps and TCXO references during board bring-up
 
 ## License
 
