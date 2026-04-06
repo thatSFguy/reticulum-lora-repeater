@@ -248,6 +248,12 @@ static void dispatch(char* line) {
         if (!rlr::radio::online()) { err("radio not online"); return; }
         Serial.println("firing LXMF presence announce...");
         rlr::lxmf_presence::announce_now(*s_live);
+        // Note: the telemetry announce may occasionally fail with a
+        // transmit error when fired immediately after LXMF because
+        // the radio is still transitioning from TX→RX. This is
+        // harmless — automatic periodic announces are naturally
+        // spaced and never hit this. We don't add a blocking delay
+        // here because it would stall RX processing and tick().
         Serial.println("firing telemetry announce...");
         rlr::telemetry::announce_now(*s_live);
         ok();
