@@ -110,4 +110,4 @@
 #define DEFAULT_CONFIG_CR               5
 #define DEFAULT_CONFIG_TXP_DBM          14
 #define DEFAULT_CONFIG_BATT_MULT        2.198f
-#define DEFAULT_CONFIG_DISPLAY_NAME     "RAK4631 Repeater"
+#define DEFAULT_CONFIG_DISPLAY_NAME     "Rptr-RAK4631"

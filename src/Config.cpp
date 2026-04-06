@@ -14,6 +14,7 @@
 #include "Arduino.h"
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 #include <Bytes.h>
 #include <Utilities/OS.h>
@@ -60,7 +61,18 @@ void defaults(Config& out) {
     out.batt_mult        = DEFAULT_CONFIG_BATT_MULT;
     out.tele_interval_ms = 10800000UL;   // 3 h
     out.lxmf_interval_ms = 1800000UL;    // 30 min
-    strncpy(out.display_name, DEFAULT_CONFIG_DISPLAY_NAME, sizeof(out.display_name) - 1);
+    // Build a unique default name from "Rptr-" + last 12 hex chars of
+    // the nRF52840's factory-programmed device ID (FICR). This gives
+    // every node a distinct name out of the box, making it clear in
+    // Sideband/MeshChat that it's a repeater (not a chat endpoint)
+    // and which physical device it is. Users can override via CONFIG SET.
+    {
+        uint32_t id0 = NRF_FICR->DEVICEID[0];
+        uint32_t id1 = NRF_FICR->DEVICEID[1];
+        // Take lower 24 bits of each word → 12 hex chars
+        snprintf(out.display_name, sizeof(out.display_name),
+                 "Rptr-%04X%08X", (unsigned)(id1 & 0xFFFF), (unsigned)id0);
+    }
     out.crc32            = 0;            // populated on save
 }
 

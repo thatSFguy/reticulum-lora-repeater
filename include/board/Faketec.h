@@ -97,4 +97,4 @@
 #define DEFAULT_CONFIG_CR               5
 #define DEFAULT_CONFIG_TXP_DBM          22           // TEMP: matches current mesh (SX1262 core; ext PA → ~30 dBm)
 #define DEFAULT_CONFIG_BATT_MULT        1.284f       // field-calibrated on USB @ 5 V
-#define DEFAULT_CONFIG_DISPLAY_NAME     "Faketec Repeater (new repo)"
+#define DEFAULT_CONFIG_DISPLAY_NAME     "Rptr-Faketec"
