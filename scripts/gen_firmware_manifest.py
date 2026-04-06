@@ -52,7 +52,7 @@ REPO_ROOT       = Path(__file__).resolve().parents[1]
 FIRMWARE_ROOT   = REPO_ROOT / "docs" / "firmware"
 MANIFEST_PATH   = FIRMWARE_ROOT / "manifest.json"
 ASSET_RE        = re.compile(
-    r"^reticulum-lora-repeater-(?P<board>[^-]+)-(?P<tag>v.+)\.(?P<ext>zip|hex)$"
+    r"^reticulum-lora-repeater-(?P<board>[^-]+)-(?P<tag>v.+)\.(?P<ext>zip|hex|uf2)$"
 )
 
 

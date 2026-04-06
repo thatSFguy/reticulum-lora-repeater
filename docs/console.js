@@ -534,6 +534,7 @@ class RLRConsole {
   const fwFile  = $('fw-file');
   const fwInfo  = $('fw-info');
   const btnFlash = $('btn-flash');
+  const btnUf2   = $('btn-download-uf2');
   const fwBar   = $('fw-progress-bar');
   const fwStage = $('fw-stage');
 
@@ -551,6 +552,8 @@ class RLRConsole {
   // Flash buttons on having a package, because there's no point
   // putting the board into bootloader mode if we have nothing to
   // flash.
+  let currentUf2Path = null;  // set when release is loaded
+
   function setLoadedPackage(pkg, label) {
     selectedPackage = pkg;
     const btnDfuEl = document.getElementById('btn-dfu');
@@ -560,12 +563,37 @@ class RLRConsole {
       fwInfo.textContent = `${label} — app ${appSize} B, init ${initSize} B`;
       btnFlash.disabled  = false;
       if (btnDfuEl) btnDfuEl.disabled = false;
+      if (btnUf2) btnUf2.disabled = !currentUf2Path;
       log('info', `package loaded (${label}): app=${appSize} bytes, init=${initSize} bytes`);
     } else {
       fwInfo.textContent = 'no firmware loaded';
       btnFlash.disabled  = true;
       if (btnDfuEl) btnDfuEl.disabled = true;
+      if (btnUf2) btnUf2.disabled = true;
     }
+  }
+
+  // UF2 download — triggers a browser download of the .uf2 file for
+  // boards with UF2 bootloaders (XIAO, etc.). User double-taps reset
+  // to get the XIAOBOOT/NICENANO USB drive, then drags the .uf2 onto it.
+  if (btnUf2) {
+    btnUf2.addEventListener('click', async () => {
+      if (!currentUf2Path) { log('err', 'no UF2 file available for this release'); return; }
+      try {
+        const res = await fetch(currentUf2Path);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = currentUf2Path.split('/').pop();
+        a.click();
+        URL.revokeObjectURL(url);
+        log('ok', `downloaded ${a.download} — drag to bootloader USB drive`);
+      } catch (e) {
+        log('err', 'UF2 download failed: ' + e.message);
+      }
+    });
   }
 
   fwFile.addEventListener('change', async () => {
@@ -703,6 +731,8 @@ class RLRConsole {
       for (const c of chunks) { buf.set(c, offset); offset += c.length; }
 
       const pkg = await RLRDfu.DfuPackage.fromArrayBuffer(buf.buffer);
+      // Set UF2 path for the download button (if manifest includes it)
+      currentUf2Path = board.uf2_path || null;
       setLoadedPackage(pkg, `${board.name} ${r.tag}`);
       relStatus.textContent = `Loaded ${board.zip_path.split('/').pop()} (${received} B).`;
     } catch (e) {

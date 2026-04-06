@@ -144,9 +144,10 @@
          out the touch quirk. For now the reset-button fallback is
          the documented path. -->
     <button id="btn-dfu" class="secondary" style="display: none;" disabled>Enter DFU mode</button>
-    <button id="btn-flash" disabled>Flash</button>
+    <button id="btn-flash" disabled>Flash (DFU)</button>
+    <button id="btn-download-uf2" class="secondary" disabled>Download UF2</button>
     <span style="color: var(--muted); font-size: 12px; align-self: center;">
-      The bootloader is a different USB port than the running application. Double-tap reset, then select the new port that appears.
+      DFU: double-tap reset, pick bootloader port. UF2: double-tap reset, drag file to XIAOBOOT/NICENANO drive.
     </span>
   </div>
   <div class="progress"><div id="fw-progress-bar"></div></div>

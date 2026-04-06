@@ -425,3 +425,19 @@ patch_microreticulum(env)         # noqa: F821
 patch_identity_hash(env)          # noqa: F821
 patch_validate_announce_diag(env) # noqa: F821
 patch_announce_diag(env)          # noqa: F821
+
+
+# ---------------------------------------------------------------
+#  Post-build: generate UF2 from HEX for all boards
+# ---------------------------------------------------------------
+
+import hex2uf2 as _hex2uf2  # noqa: E402 (scripts/ is on sys.path from import os above)
+
+def _generate_uf2(source, target, env):
+    firmware_dir = env.subst("$BUILD_DIR")
+    hex_path = os.path.join(firmware_dir, "firmware.hex")
+    uf2_path = os.path.join(firmware_dir, "firmware.uf2")
+    if os.path.exists(hex_path):
+        _hex2uf2.convert_to_uf2(hex_path, uf2_path)
+
+env.AddPostAction("buildprog", _generate_uf2)  # noqa: F821
