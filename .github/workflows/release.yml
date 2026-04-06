@@ -46,8 +46,7 @@ jobs:
         board:
           - Faketec
           - RAK4631
-          # Phase 7 completion for v0.2:
-          # - XIAO_nRF52840
+          - XIAO_nRF52840
 
     steps:
       - name: Checkout
