@@ -1,6 +1,47 @@
 {
-  "generated_at": "2026-04-06T14:30:44+00:00",
+  "generated_at": "2026-04-06T15:46:09+00:00",
   "releases": [
+    {
+      "tag": "v0.2.2",
+      "prerelease": false,
+      "boards": [
+        {
+          "name": "Faketec",
+          "hex_path": "firmware/v0.2.2/reticulum-lora-repeater-Faketec-v0.2.2.hex",
+          "hex_size": 1772444,
+          "zip_path": "firmware/v0.2.2/reticulum-lora-repeater-Faketec-v0.2.2.zip",
+          "zip_size": 630927
+        },
+        {
+          "name": "Heltec_T114",
+          "hex_path": "firmware/v0.2.2/reticulum-lora-repeater-Heltec_T114-v0.2.2.hex",
+          "hex_size": 1771949,
+          "zip_path": "firmware/v0.2.2/reticulum-lora-repeater-Heltec_T114-v0.2.2.zip",
+          "zip_size": 630751
+        },
+        {
+          "name": "RAK3401",
+          "hex_path": "firmware/v0.2.2/reticulum-lora-repeater-RAK3401-v0.2.2.hex",
+          "hex_size": 1771769,
+          "zip_path": "firmware/v0.2.2/reticulum-lora-repeater-RAK3401-v0.2.2.zip",
+          "zip_size": 630687
+        },
+        {
+          "name": "RAK4631",
+          "hex_path": "firmware/v0.2.2/reticulum-lora-repeater-RAK4631-v0.2.2.hex",
+          "hex_size": 1771769,
+          "zip_path": "firmware/v0.2.2/reticulum-lora-repeater-RAK4631-v0.2.2.zip",
+          "zip_size": 630687
+        },
+        {
+          "name": "XIAO_nRF52840",
+          "hex_path": "firmware/v0.2.2/reticulum-lora-repeater-XIAO_nRF52840-v0.2.2.hex",
+          "hex_size": 1772563,
+          "zip_path": "firmware/v0.2.2/reticulum-lora-repeater-XIAO_nRF52840-v0.2.2.zip",
+          "zip_size": 630967
+        }
+      ]
+    },
     {
       "tag": "v0.2.1",
       "prerelease": false,
