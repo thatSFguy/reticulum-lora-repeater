@@ -29,6 +29,7 @@ class RLRConsole {
     this.lineResolvers = [];
     this.log = logFn || (() => {});
     this.onDisconnect = null;
+    this.onUnsolicited = null;  // called for lines that arrive when no command is pending
   }
 
   isConnected() { return this.port !== null; }
@@ -87,6 +88,11 @@ class RLRConsole {
       const entry = this.lineResolvers.shift();
       entry.resolve(line);
     } else {
+      // No command is pending — this is unsolicited output from the
+      // firmware (alive markers, Radio: RX lines, RNS debug, etc.).
+      // Feed it to the UI's log panel so the user can see it scroll
+      // in real time without needing PlatformIO's serial monitor.
+      if (this.onUnsolicited) this.onUnsolicited(line);
       this.lineQueue.push(line);
     }
   }
@@ -247,6 +253,13 @@ class RLRConsole {
     liveDiv.classList.toggle('hidden', !on);
   }
 
+  // Stream unsolicited firmware output (alive markers, Radio: RX
+  // lines, RNS debug) into the Log panel in real time so the user
+  // gets a live serial monitor without needing PlatformIO.
+  con.onUnsolicited = (line) => {
+    log('info', line);
+  };
+
   con.onDisconnect = () => {
     log('info', '--- port disconnected ---');
     setConnected(false);
@@ -297,13 +310,13 @@ class RLRConsole {
     const c = await con.configGet();
     originalCfg = { ...c };
     $('cfg-display_name').value     = c.display_name || '';
-    $('cfg-freq_hz').value          = c.freq_hz || '';
+    $('cfg-freq_mhz').value         = c.freq_hz ? (parseInt(c.freq_hz) / 1000000).toFixed(3) : '';
     $('cfg-bw_hz').value            = c.bw_hz || '';
     $('cfg-sf').value               = c.sf || '';
     $('cfg-cr').value               = c.cr || '';
     $('cfg-txp_dbm').value          = c.txp_dbm || '';
-    $('cfg-tele_interval_ms').value = c.tele_interval_ms || '';
-    $('cfg-lxmf_interval_ms').value = c.lxmf_interval_ms || '';
+    $('cfg-tele_interval_min').value = c.tele_interval_ms ? Math.round(parseInt(c.tele_interval_ms) / 60000) : '';
+    $('cfg-lxmf_interval_min').value = c.lxmf_interval_ms ? Math.round(parseInt(c.lxmf_interval_ms) / 60000) : '';
     $('cfg-telemetry').checked      = c.telemetry === '1';
     $('cfg-lxmf').checked           = c.lxmf === '1';
     $('cfg-heartbeat').checked      = c.heartbeat === '1';
@@ -338,13 +351,13 @@ class RLRConsole {
   function formValues() {
     return {
       display_name:     $('cfg-display_name').value,
-      freq_hz:          $('cfg-freq_hz').value,
+      freq_hz:          $('cfg-freq_mhz').value ? String(Math.round(parseFloat($('cfg-freq_mhz').value) * 1000000)) : '',
       bw_hz:            $('cfg-bw_hz').value,
       sf:               $('cfg-sf').value,
       cr:               $('cfg-cr').value,
       txp_dbm:          $('cfg-txp_dbm').value,
-      tele_interval_ms: $('cfg-tele_interval_ms').value,
-      lxmf_interval_ms: $('cfg-lxmf_interval_ms').value,
+      tele_interval_ms: $('cfg-tele_interval_min').value ? String(Math.round(parseFloat($('cfg-tele_interval_min').value) * 60000)) : '',
+      lxmf_interval_ms: $('cfg-lxmf_interval_min').value ? String(Math.round(parseFloat($('cfg-lxmf_interval_min').value) * 60000)) : '',
       telemetry:        $('cfg-telemetry').checked ? '1' : '0',
       lxmf:             $('cfg-lxmf').checked      ? '1' : '0',
       heartbeat:        $('cfg-heartbeat').checked ? '1' : '0',
