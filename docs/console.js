@@ -430,6 +430,70 @@ class RLRConsole {
     }
   });
 
+  // ---------------------------------------------------------------
+  //  Config export / import
+  // ---------------------------------------------------------------
+
+  // Export: read form values (in user-friendly units) and download
+  // as a JSON file. The file uses the same field names as the
+  // firmware's CONFIG GET but with human-friendly values (MHz, min).
+  $('btn-export').addEventListener('click', () => {
+    const cfg = {
+      display_name:     $('cfg-display_name').value,
+      freq_mhz:         parseFloat($('cfg-freq_mhz').value) || 0,
+      bw_hz:            parseInt($('cfg-bw_hz').value) || 0,
+      sf:               parseInt($('cfg-sf').value) || 0,
+      cr:               parseInt($('cfg-cr').value) || 0,
+      txp_dbm:          parseInt($('cfg-txp_dbm').value) || 0,
+      tele_interval_min: parseFloat($('cfg-tele_interval_min').value) || 0,
+      lxmf_interval_min: parseFloat($('cfg-lxmf_interval_min').value) || 0,
+      telemetry:        $('cfg-telemetry').checked,
+      lxmf:             $('cfg-lxmf').checked,
+      heartbeat:        $('cfg-heartbeat').checked,
+    };
+    const json = JSON.stringify(cfg, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = 'rlr-config.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    log('ok', 'config exported to rlr-config.json');
+  });
+
+  // Import: read a JSON file and populate the form. The user still
+  // needs to click Commit to push it to the device — import only
+  // fills the form, it doesn't touch the serial port.
+  $('btn-import').addEventListener('click', () => {
+    $('cfg-import-file').click();
+  });
+
+  $('cfg-import-file').addEventListener('change', async () => {
+    const f = $('cfg-import-file').files && $('cfg-import-file').files[0];
+    if (!f) return;
+    try {
+      const text = await f.text();
+      const cfg  = JSON.parse(text);
+      if (cfg.display_name !== undefined)      $('cfg-display_name').value     = cfg.display_name;
+      if (cfg.freq_mhz !== undefined)          $('cfg-freq_mhz').value         = cfg.freq_mhz;
+      if (cfg.bw_hz !== undefined)             $('cfg-bw_hz').value            = String(cfg.bw_hz);
+      if (cfg.sf !== undefined)                $('cfg-sf').value               = String(cfg.sf);
+      if (cfg.cr !== undefined)                $('cfg-cr').value               = String(cfg.cr);
+      if (cfg.txp_dbm !== undefined)           $('cfg-txp_dbm').value          = cfg.txp_dbm;
+      if (cfg.tele_interval_min !== undefined)  $('cfg-tele_interval_min').value = cfg.tele_interval_min;
+      if (cfg.lxmf_interval_min !== undefined)  $('cfg-lxmf_interval_min').value = cfg.lxmf_interval_min;
+      if (cfg.telemetry !== undefined)         $('cfg-telemetry').checked      = !!cfg.telemetry;
+      if (cfg.lxmf !== undefined)              $('cfg-lxmf').checked           = !!cfg.lxmf;
+      if (cfg.heartbeat !== undefined)         $('cfg-heartbeat').checked      = !!cfg.heartbeat;
+      log('ok', 'config imported from ' + f.name + ' — edit display_name if needed, then Commit');
+    } catch (e) {
+      log('err', 'import failed: ' + e.message);
+    }
+    // Reset the file input so re-importing the same file triggers change again
+    $('cfg-import-file').value = '';
+  });
+
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
   // Wait for a USB re-enumeration event after a DFU touch. Resolves
