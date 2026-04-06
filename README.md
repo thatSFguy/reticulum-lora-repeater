@@ -2,77 +2,82 @@
 
 A tiny, purpose-built [Reticulum](https://reticulum.network/) LoRa
 transport repeater firmware for low-power nRF52 boards. Flash it from
-your browser, fill out a form, and your solar node is on the air.
+your browser, configure over USB, and your node is on the air.
+
+**Web flasher:** https://thatSFguy.github.io/reticulum-lora-repeater/
 
 **Target user:** already running [Meshtastic](https://meshtastic.org/)
 or [MeshCore](https://github.com/ripplebiz/MeshCore) on a Nice!Nano-style
 nRF52840 + SX1262 board, curious about Reticulum, and wants to try
-running a dedicated repeater without a toolchain install or
-`rnodeconf` configuration dance.
+running a dedicated repeater without a toolchain install.
 
-## Status
+## Quick start
 
-**Pre-alpha.** This repo was scaffolded from a working sibling project
-([microReticulum_Faketec_Repeater](../microReticulum_Faketec_Repeater))
-that has a real on-air transport node running in production. The
-structure here is new; the radio code, LXMF encoding, battery
-telemetry, heap tuning, and 11-bug-deep bring-up knowledge are all
-ported from the sibling project. See `docs/TROUBLESHOOTING.md` for the
-collected tribal knowledge.
+1. Visit **https://thatSFguy.github.io/reticulum-lora-repeater/**
+2. Pick your board and version, click **Select firmware**
+3. Double-tap the reset button on the board to enter bootloader mode
+4. Click **Flash** and pick the new port that appears
+5. After flashing, click **Connect** to open the serial console
+6. Edit your config (frequency, display name, TX power, etc.) and click **Commit & Reboot**
+
+The node boots, starts relaying Reticulum packets over LoRa, and
+announces itself on the mesh.
 
 ## What it is
 
-- **Transport-only.** The firmware does one job: sit there and relay
-  Reticulum packets over LoRa. No KISS host mode, no display, no
-  BLE (yet), no configuration file, no PC toolchain.
+- **Transport-only.** The firmware does one job: relay Reticulum
+  packets over LoRa. No KISS host mode, no display, no BLE.
 - **Runtime-configurable.** All settings — frequency, bandwidth, SF,
   CR, TX power, display name, battery calibration — live in internal
-  flash, not build flags. Change a setting, no reflash required.
-- **Web-flashable.** Visit the hosted page, plug your board in via USB,
-  click Flash, fill out a form, click Apply. Under 5 minutes from bare
-  board to on-air node.
-- **Small.** Target budget: < 2000 lines of application source, fits
-  comfortably in an nRF52840's flash with room for Reticulum's stack
-  and microStore persistence.
-- **Observable in LXMF clients.** Announces itself under an LXMF
-  `lxmf.delivery` aspect so MeshChat / Sideband / NomadNet show it
-  in their network visualizers with a human-readable name.
-- **Self-reporting.** Periodically announces battery voltage + health
-  (free SRAM, RSSI, uptime, packet counters) on a custom telemetry
-  aspect. Run the companion Python receiver on any Reticulum-aware
-  host to log remote solar nodes without visiting them.
+  flash, not build flags. Edit via the web console or serial terminal.
+- **Web-flashable.** Visit the hosted page, plug in USB, click Flash.
+  No PlatformIO, no toolchain, no `rnodeconf`. Under 5 minutes from
+  bare board to on-air node.
+- **Observable.** Announces on `lxmf.delivery` so MeshChat / Sideband
+  show it by name. Periodic telemetry announces report battery voltage,
+  uptime, heap, and packet counters.
+- **Small.** ~74% flash, ~9% RAM on nRF52840. Room for the full
+  Reticulum stack + microStore persistence.
 
 ## What it isn't
 
 - **Not a KISS RNode replacement.** If you need a USB-connected RNode
-  for a Sideband/NomadNet endpoint on your laptop, keep using the
-  upstream `RNode_Firmware`. This firmware doesn't speak the KISS
-  host protocol at all.
+  for Sideband on your laptop, use the upstream `RNode_Firmware`.
 - **Not a LoRa chat client.** There's no user interface on the device.
-  The display name is just a label for the visualizer.
-- **Not a bridge to Meshtastic or MeshCore meshes.** Reticulum is a
-  different protocol at the LoRa air-framing level; it can't hear
-  Meshtastic packets and vice versa. Your nodes will need to all run
-  Reticulum-compatible firmware (this one, upstream RNode, etc.) to
-  form a single mesh.
+- **Not a bridge to Meshtastic/MeshCore.** Reticulum is a different
+  protocol at the LoRa framing level.
 
 ## Supported boards
 
 | Board | Radio | Status |
 |---|---|---|
-| Faketec (Nice!Nano clone + Ebyte E22-900M30S SX1262) | SX1262 | ✅ v0.1 target |
-| RAK4631 | SX1262 | 📋 stub header, v0.2 target |
-| Seeed XIAO nRF52840 + E22 | SX1262 | 📋 stub header, v0.2 target |
+| **Faketec** (Nice!Nano clone + Ebyte E22-900M30S) | SX1262 + ext PA | Bench-validated, shipping in releases |
+| **RAK4631** (WisBlock Core) | Integrated SX1262 | Builds green, shipping in releases, hardware validation pending |
+| XIAO nRF52840 + SX1262 | SX1262 | Stub header, future target |
 
 Adding a new board is one header file in `include/board/` plus one
 env block in `platformio.ini` — see `docs/ADDING_A_BOARD.md`.
 
-## Get started
+## Serial console commands
 
-**With the webflasher (recommended, coming soon):** Visit
-`<tbd>.github.io/reticulum-lora-repeater/` and follow the prompts.
+Connect via the web console or any serial terminal at 115200 8N1:
 
-**From source (developer workflow):**
+```
+PING                       - liveness check
+VERSION                    - firmware version
+STATUS                     - runtime status (uptime, radio, packets, battery)
+HELP                       - list all commands
+REBOOT                     - NVIC system reset
+ANNOUNCE                   - force LXMF + telemetry announce now
+CONFIG GET                 - print staged config
+CONFIG SET <key> <value>   - stage a field change
+CONFIG RESET               - reseed staging from board defaults
+CONFIG REVERT              - reseed staging from live config
+CONFIG COMMIT              - persist staging + reboot
+CALIBRATE BATTERY <mv>     - derive batt_mult from measured voltage
+```
+
+## From source (developer workflow)
 
 ```bash
 git clone https://github.com/thatSFguy/reticulum-lora-repeater
@@ -81,43 +86,28 @@ pio run -e Faketec -t upload --upload-port COMxx
 pio device monitor -e Faketec --port COMxx
 ```
 
-Then paste this into the monitor to provision:
+## CI / Releases
 
-```
-CONFIG SET freq_hz 904375000
-CONFIG SET bw_hz 250000
-CONFIG SET sf 10
-CONFIG SET cr 5
-CONFIG SET txp_dbm 22
-CONFIG SET display_name "My Repeater"
-CONFIG COMMIT
-```
-
-The node reboots, picks up the new config from flash, and starts
-announcing on LoRa.
+Every tagged version (`v*`) triggers a GitHub Actions workflow that:
+1. Builds firmware for every board in the matrix (Faketec, RAK4631)
+2. Creates a GitHub Release with `.zip` and `.hex` assets per board
+3. Publishes firmware to `docs/firmware/<tag>/` for the web flasher
+4. Regenerates the firmware manifest so the web flasher auto-discovers new versions
 
 ## Acknowledgements
 
-This firmware would not exist without:
-
 - **Mark Qvist** for [Reticulum](https://github.com/markqvist/Reticulum),
   [RNode_Firmware](https://github.com/markqvist/RNode_Firmware), and
-  [LXMF](https://github.com/markqvist/LXMF). This project is downstream
-  of all three.
+  [LXMF](https://github.com/markqvist/LXMF)
 - **Chad Attermann** for
-  [microReticulum](https://github.com/attermann/microReticulum),
-  [microStore](https://github.com/attermann/microStore), and
-  [micropython-reticulum](https://github.com/attermann/micropython-reticulum).
-  The C++ Reticulum stack, microStore persistence, and the LXMF
-  announce wire-format reference all come from his work.
+  [microReticulum](https://github.com/attermann/microReticulum) and
+  [microStore](https://github.com/attermann/microStore) — the C++
+  Reticulum stack and persistence layer this firmware runs on
 - **Liam Cottle** for
   [rnode-flasher](https://github.com/liamcottle/rnode-flasher) — the
-  webflasher design is based on his JS-native DFU implementation.
-- **The MeshCore project** for its
-  [`nrf52840/diy/nrf52_promicro_diy_tcxo`](https://github.com/meshtastic/firmware/tree/master/variants/nrf52840/diy/nrf52_promicro_diy_tcxo)
-  (Meshtastic) and `variants/promicro/` (MeshCore) references, which
-  were the authoritative source for the Faketec pin map, TCXO voltage,
-  and VEXT_EN init sequence during initial bring-up.
+  web flasher's DFU protocol implementation is based on his work
+- **Meshtastic** and **MeshCore** projects for the nRF52840 ProMicro
+  DIY variant pin maps and TCXO reference during initial bring-up
 
 ## License
 

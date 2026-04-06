@@ -153,20 +153,20 @@
   <div id="fw-stage" class="stage-label"></div>
 </div>
 
-<div id="live" class="hidden">
-
-  <div class="panel">
-    <h2>Console</h2>
-    <p style="margin: 0 0 12px 0; color: var(--muted); font-size: 13px;">
-      Connect to the running application port (not the bootloader) to
-      read status, edit config, and calibrate the battery.
-    </p>
-    <div class="row">
-      <span id="conn-status"><span class="status-dot" id="conn-dot"></span><span id="conn-text">Disconnected</span></span>
-      <button id="btn-connect">Connect</button>
-      <button id="btn-disconnect" class="secondary hidden">Disconnect</button>
-    </div>
+<div class="panel">
+  <h2>Configure</h2>
+  <p style="margin: 0 0 12px 0; color: var(--muted); font-size: 13px;">
+    After flashing, connect to the running application port (not the
+    bootloader) to read status, edit config, and calibrate the battery.
+  </p>
+  <div class="row">
+    <span id="conn-status"><span class="status-dot" id="conn-dot"></span><span id="conn-text">Disconnected</span></span>
+    <button id="btn-connect">Connect</button>
+    <button id="btn-disconnect" class="secondary hidden">Disconnect</button>
   </div>
+</div>
+
+<div id="live" class="hidden">
 
   <div class="panel">
     <h2>Status</h2>
