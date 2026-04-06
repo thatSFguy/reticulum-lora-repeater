@@ -28,7 +28,8 @@ import RNS
 import os
 import json
 
-from sbapp.sideband.plugins import SidebandTelemetryPlugin
+# NOTE: Do NOT import SidebandTelemetryPlugin — Sideband's plugin loader
+# uses exec() and injects the base classes into the namespace automatically.
 
 DATA_FILENAME = "rlr_telemetry.json"
 

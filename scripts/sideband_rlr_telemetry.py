@@ -43,13 +43,12 @@
 import RNS
 import os
 import json
-import time
 import threading
 
 from datetime import datetime
 
-# Sideband will inject this at load time
-from sbapp.sideband.plugins import SidebandServicePlugin
+# NOTE: Do NOT import SidebandServicePlugin — Sideband's plugin loader
+# uses exec() and injects the base classes into the namespace automatically.
 
 # ── constants ────────────────────────────────────────────────────────
 
