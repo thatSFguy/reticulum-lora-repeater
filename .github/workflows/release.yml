@@ -47,6 +47,8 @@ jobs:
           - Faketec
           - RAK4631
           - XIAO_nRF52840
+          - Heltec_T114
+          - RAK3401
 
     steps:
       - name: Checkout
