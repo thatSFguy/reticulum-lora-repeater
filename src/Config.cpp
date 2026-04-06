@@ -209,9 +209,7 @@ void load_or_defaults(Config& out) {
     // Persist the freshly-defaulted config so the next boot takes
     // the fast path. If save() fails we still return the in-memory
     // defaults and carry on.
-    if (!save(out)) {
-        Serial.println("Config: warning — defaults could not be persisted");
-    }
+    Serial.println("Config: defaults loaded (run CONFIG COMMIT to persist)");
 }
 
 // --- set_field / print_fields ------------------------------------

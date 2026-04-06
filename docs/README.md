@@ -12,7 +12,7 @@ directly from the browser. No PlatformIO, no toolchain, no
 |---|---|---|
 | **Faketec** (Nice!Nano + Ebyte E22-900M30S) | SX1262 + ext PA | Bench-validated |
 | **RAK4631** (WisBlock Core) | Integrated SX1262 | |
-| **XIAO nRF52840 Kit** (Seeed XIAO + Wio-SX1262) | SX1262 | |
+| **XIAO nRF52840 Kit** (Seeed XIAO + Wio-SX1262) | SX1262 | WIP — SoftDevice v7 incompatibility |
 | **Heltec Mesh Node T114** | Integrated SX1262 | Has TFT display (unused by firmware) |
 | **RAK3401 1-Watt** (WisBlock + 1W PA) | SX1262 + 1W PA | Higher default TX power |
 

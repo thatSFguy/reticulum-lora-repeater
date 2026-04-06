@@ -59,7 +59,7 @@ change the display name, commit. Under 2 minutes per node after the first.
 |---|---|---|
 | **Faketec** (Nice!Nano clone + Ebyte E22-900M30S) | SX1262 + ext PA | Bench-validated |
 | **RAK4631** (WisBlock Core) | Integrated SX1262 | Shipping in releases |
-| **XIAO nRF52840 Kit** (Seeed XIAO + Wio-SX1262 daughter) | SX1262 | Shipping in releases |
+| **XIAO nRF52840 Kit** (Seeed XIAO + Wio-SX1262 daughter) | SX1262 | WIP — S140 v7 SoftDevice flash API incompatibility |
 | **Heltec Mesh Node T114** | Integrated SX1262 | Shipping in releases |
 | **RAK3401 1-Watt** (WisBlock + 1W PA) | SX1262 + 1W PA | Shipping in releases |
 
