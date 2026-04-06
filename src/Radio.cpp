@@ -79,7 +79,7 @@ bool begin(const Config& cfg) {
     // 0x1424 at the register level) and is what the sibling project
     // and the rest of our Reticulum mesh already use.
     const uint8_t sync_word      = 0x12;
-    const uint16_t preamble_len  = 18;    // matches upstream RNode + microReticulum defaults
+    const uint16_t preamble_len  = 16;    // MeshCore uses 16; testing interop with SX1276
     const bool use_regulator_ldo = false; // DC-DC regulator (default for most modules)
 
     // TCXO voltage from the board header. RADIO_TCXO_VOLTAGE_MV is
@@ -100,23 +100,8 @@ bool begin(const Config& cfg) {
         return false;
     }
 
-    // Belt-and-suspenders CRC enable. RadioLib's begin() enables CRC
-    // by default on SX1262 but MeshCore calls this explicitly and
-    // it costs nothing.
     s_radio.setCRC(1);
 
-    // Override sync word with control bits 0x34 instead of RadioLib's
-    // default 0x44. Both map to air-interface sync word 0x12, but
-    // some SX1276 receivers (including RNode firmware) can't decode
-    // packets from an SX1262 using 0x44 control bits. This is a known
-    // SX1262↔SX1276 interop issue documented in Semtech forums and
-    // RadioLib issues. 0x34 produces register value 0x1324 which is
-    // reliably received by SX1276 with sync word 0x12.
-    s_radio.setSyncWord(sync_word, 0x34);
-
-    // DIO2 drives the external *TX* path (T/R switch's TXEN input)
-    // on Ebyte E22 and Wio-SX1262 modules. This handles the TX
-    // antenna path automatically during transmission.
     #if RADIO_DIO2_AS_RF_SWITCH
         state = s_radio.setDio2AsRfSwitch(true);
         if (state != RADIOLIB_ERR_NONE) {
@@ -125,17 +110,6 @@ bool begin(const Config& cfg) {
         }
     #endif
 
-    // CRITICAL for E22 / Wio-SX1262 modules: the *RX* path goes
-    // through an external LNA that is gated by a discrete RXEN pin
-    // driven by the MCU. Without setRfSwitchPins() telling RadioLib
-    // which GPIO to drive HIGH during RX, the LNA stays off and the
-    // chip is in RX mode but effectively deaf. This was the actual
-    // cause of Phase 2's "radio=up, pin=0 forever" symptom — DIO2
-    // alone handles only the TX path, not RX.
-    //
-    // MeshCore's CustomSX1262.h std_init() does the same thing
-    // conditionally on SX126X_RXEN being defined in the board header.
-    // See docs/TROUBLESHOOTING.md items #12-#15 for the full context.
     #if defined(PIN_LORA_RXEN) && PIN_LORA_RXEN >= 0
         {
             uint32_t tx_pin = RADIOLIB_NC;
@@ -146,8 +120,6 @@ bool begin(const Config& cfg) {
         }
     #endif
 
-    // Enable the LNA's boosted gain mode. Costs ~2 mA idle but adds
-    // ~3 dB of sensitivity in RX — worthwhile for a repeater.
     s_radio.setRxBoostedGainMode(true);
 
     s_online = true;
@@ -220,39 +192,35 @@ int read_pending(uint8_t* buf, size_t bufsize) {
         }
         return -1;
     }
-    int state = s_radio.readData(buf, len);
+    // Read into a temporary buffer so we can strip the RNode header
+    uint8_t rx_tmp[512];
+    if (len > sizeof(rx_tmp)) len = sizeof(rx_tmp);
+    int state = s_radio.readData(rx_tmp, len);
 
-    // Capture signal-quality stats while the chip still has them in
-    // its last-packet registers. These calls are free — they just
-    // read SX1262 registers that were latched when the packet was
-    // demodulated. Useful for diagnosing "flaky" reception (is the
-    // signal marginal? are we close to the noise floor?) and for
-    // sanity-checking that packets from distant peers actually
-    // have plausible link budgets.
     float rssi = s_radio.getRSSI();
     float snr  = s_radio.getSNR();
 
-    // Decode the Reticulum flags byte (first byte of every packet)
-    // so every RX line shows pt=<type> ctx=<ratchet-bit> before
-    // microReticulum even gets its turn. Reticulum's flags layout
-    // (upstream RNS/Packet.py:get_packed_flags and microReticulum's
-    // Packet.cpp:unpack_flags — verified matching):
-    //
-    //   bits 7:6  header_type
-    //   bit 5     context_flag   (1 = Reticulum 0.7+ ratchet announce)
-    //   bit 4     transport_type
-    //   bits 3:2  destination_type
-    //   bits 1:0  packet_type    (0=DATA 1=ANNOUNCE 2=LINKREQ 3=PROOF)
-    //
-    // Logging this at the radio layer means we see EVERY packet the
-    // chip heard, even ones that microReticulum drops (e.g.
-    // "Ignored packet ... for other transport instance" filters).
-    // Crucial for answering "did Sideband's announce actually hit
-    // our radio?" in the face of flaky reception.
+    // RNode-compatible framing: strip the 1-byte RNode header that
+    // every RNode prepends to LoRa frames. The header byte is:
+    //   upper nibble = random sequence, lower nibble = flags
+    // We discard it and pass only the Reticulum payload to the caller.
+    // If the packet came from another node running our firmware (which
+    // now also prepends this header), the strip is symmetric.
+    if (len < 2) {
+        // Too short to have a header + payload — discard
+        s_radio.startReceive();
+        return 0;
+    }
+    uint8_t rnode_hdr = rx_tmp[0];
+    size_t payload_len = len - 1;
+    if (payload_len > bufsize) payload_len = bufsize;
+    memcpy(buf, rx_tmp + 1, payload_len);
+
+    // Decode the Reticulum flags byte (now at buf[0] after header strip)
     const char* pt_name = "UNK";
     uint8_t pt  = 0;
     uint8_t ctx = 0;
-    if (len > 0) {
+    if (payload_len > 0) {
         pt  = (uint8_t)(buf[0] & 0x03);
         ctx = (uint8_t)((buf[0] >> 5) & 0x01);
         switch (pt) {
@@ -264,7 +232,7 @@ int read_pending(uint8_t* buf, size_t bufsize) {
     }
 
     Serial.print("Radio: RX ");
-    Serial.print(len);
+    Serial.print(payload_len);
     Serial.print("B  RSSI=");
     Serial.print(rssi, 1);
     Serial.print(" dBm  SNR=");
@@ -272,29 +240,44 @@ int read_pending(uint8_t* buf, size_t bufsize) {
     Serial.print(" dB  pt=");
     Serial.print(pt_name);
     Serial.print("  ctx=");
-    Serial.println(ctx);
+    Serial.print(ctx);
+    Serial.print("  rhdr=0x");
+    Serial.println(rnode_hdr, HEX);
 
-    // Re-enter continuous RX for the next packet before we return,
-    // so there's never a window where the chip is idle waiting for
-    // the application to tell it what to do next. If startReceive()
-    // fails here, we would silently stop receiving — log loudly so
-    // the operator sees it in the monitor.
     int sr = s_radio.startReceive();
     if (sr != RADIOLIB_ERR_NONE) {
         Serial.print("Radio: startReceive() failed after RX, code ");
         Serial.println(sr);
     }
 
-    return (state == RADIOLIB_ERR_NONE) ? (int)len : -1;
+    return (state == RADIOLIB_ERR_NONE) ? (int)payload_len : -1;
 }
 
 int transmit(const uint8_t* buf, size_t len) {
     if (!s_online) return -1;
+    // RNode-compatible framing: prepend a 1-byte header that the
+    // RNode firmware expects on every LoRa frame. Without this,
+    // RNode receivers strip the first Reticulum byte as the "header"
+    // and pass a garbled packet to the host (Sideband/MeshChat).
+    //
+    // Header format (from RNode_Firmware.ino transmit()):
+    //   Upper nibble: random sequence number (cosmetic, for dedup)
+    //   Lower nibble: flags, bit 0 = FLAG_SPLIT (0x01)
+    //   For single-frame packets (<=254 bytes): flags = 0x00
+    //
+    // We build a temporary buffer with the header prepended. The
+    // +1 byte is negligible overhead vs the LoRa airtime.
+    uint8_t rnode_header = (uint8_t)(random(256) & 0xF0); // random seq, no flags
+    uint8_t tx_buf[512];
+    if (len + 1 > sizeof(tx_buf)) return -1;
+    tx_buf[0] = rnode_header;
+    memcpy(tx_buf + 1, buf, len);
+
     // RadioLib's transmit() is blocking — it puts the chip in TX
     // mode, waits for TX_DONE, and then returns. After TX we must
     // explicitly re-enter continuous RX (transmit() doesn't do that
     // for us).
-    int state = s_radio.transmit(const_cast<uint8_t*>(buf), len);
+    int state = s_radio.transmit(tx_buf, len + 1);
     s_radio.startReceive();
     // Clear the ISR flag AFTER re-entering RX. The SX1262's DIO1
     // line can glitch during the TX→Standby→RX transition, causing
