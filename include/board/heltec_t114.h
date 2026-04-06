@@ -85,6 +85,6 @@
 #define DEFAULT_CONFIG_BW_HZ            125000UL
 #define DEFAULT_CONFIG_SF               10
 #define DEFAULT_CONFIG_CR               5
-#define DEFAULT_CONFIG_TXP_DBM          14
+#define DEFAULT_CONFIG_TXP_DBM          22
 #define DEFAULT_CONFIG_BATT_MULT        1.0f
 #define DEFAULT_CONFIG_DISPLAY_NAME     "Heltec T114 Repeater"
