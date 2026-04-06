@@ -80,13 +80,19 @@ def convert_to_uf2(hex_path, uf2_path):
     for addr, data in regions:
         for offset in range(0, len(data), BLOCK_SIZE):
             chunk = data[offset:offset + BLOCK_SIZE]
+            # Pad chunk to exactly 256 bytes. The Adafruit UF2 bootloader's
+            # is_uf2_block() requires payloadSize == 256; a short final block
+            # is silently rejected, preventing the completion handler from
+            # firing and leaving the board stuck in bootloader mode.
+            if len(chunk) < BLOCK_SIZE:
+                chunk = chunk + b"\x00" * (BLOCK_SIZE - len(chunk))
             padding = b"\x00" * (476 - len(chunk))  # pad to 476 bytes
             block = struct.pack("<IIIIIIII",
                                 UF2_MAGIC_START0,
                                 UF2_MAGIC_START1,
                                 UF2_FLAG_FAMILY,
                                 addr + offset,
-                                len(chunk),
+                                BLOCK_SIZE,
                                 block_no,
                                 total_blocks,
                                 NRF52840_FAMILY)
