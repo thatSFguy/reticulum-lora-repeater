@@ -202,11 +202,11 @@ static void _on_connect(uint16_t conn_handle) {
 }
 
 static void _on_disconnect(uint16_t conn_handle, uint8_t reason) {
-    (void)reason;
     if (s_conn_handle == conn_handle) {
         s_conn_handle = BLE_CONN_HANDLE_INVALID;
         s_connected = false;
-        Serial.println("BLE: disconnected");
+        Serial.print("BLE: disconnected, reason=0x");
+        Serial.println(reason, HEX);
     }
 }
 
@@ -233,6 +233,18 @@ static void _on_secured(uint16_t conn_handle) {
     } else {
         s_connected = true;
         Serial.println("BLE: connected (no PIN required)");
+    }
+
+    // Request relaxed connection parameters so LoRa TX (which blocks
+    // the MCU for tens of ms) doesn't trigger a supervision timeout.
+    // Units: interval = 1.25ms, timeout = 10ms.
+    if (s_connected) {
+        ble_gap_conn_params_t params;
+        params.min_conn_interval = 12;   // 15ms
+        params.max_conn_interval = 24;   // 30ms
+        params.slave_latency     = 4;    // skip up to 4 events
+        params.conn_sup_timeout  = 400;  // 4000ms (4s timeout)
+        sd_ble_gap_conn_param_update(conn_handle, &params);
     }
 
     // Update the CONFIG characteristic value so a read returns current config
@@ -287,6 +299,17 @@ bool init(const Config& cfg) {
 
     Bluefruit.begin();
     Bluefruit.setTxPower(4);
+
+    // Set PPCP so the phone knows our preferred connection parameters.
+    // Relaxed timing prevents disconnects during LoRa TX blocking.
+    {
+        ble_gap_conn_params_t ppcp;
+        ppcp.min_conn_interval = 12;   // 15ms
+        ppcp.max_conn_interval = 24;   // 30ms
+        ppcp.slave_latency     = 4;    // skip up to 4 connection events
+        ppcp.conn_sup_timeout  = 400;  // 4000ms supervision timeout
+        sd_ble_gap_ppcp_set(&ppcp);
+    }
 
     // Device name
     char name[21];
