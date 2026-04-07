@@ -420,6 +420,10 @@ class RLRConsole {
       setLoading(true);
       log('info', '--- BLE connected ---');
       await sleep(500);
+      // PING flushes any unsolicited firmware output (connection
+      // messages, alive markers) so GETP starts from a clean state.
+      try { await con.ping(); } catch (e) {}
+      await sleep(200);
       await refreshConfig();
       setLoading(false);
       setConnected(true, 'Connected (BLE)');
