@@ -1,6 +1,57 @@
 {
-  "generated_at": "2026-04-07T13:43:41+00:00",
+  "generated_at": "2026-04-07T15:36:00+00:00",
   "releases": [
+    {
+      "tag": "v0.3.1",
+      "prerelease": false,
+      "boards": [
+        {
+          "name": "Faketec",
+          "hex_path": "firmware/v0.3.1/reticulum-lora-repeater-Faketec-v0.3.1.hex",
+          "hex_size": 1915773,
+          "uf2_path": "firmware/v0.3.1/reticulum-lora-repeater-Faketec-v0.3.1.uf2",
+          "uf2_size": 1362432,
+          "zip_path": "firmware/v0.3.1/reticulum-lora-repeater-Faketec-v0.3.1.zip",
+          "zip_size": 681887
+        },
+        {
+          "name": "Heltec_T114",
+          "hex_path": "firmware/v0.3.1/reticulum-lora-repeater-Heltec_T114-v0.3.1.hex",
+          "hex_size": 1915172,
+          "uf2_path": "firmware/v0.3.1/reticulum-lora-repeater-Heltec_T114-v0.3.1.uf2",
+          "uf2_size": 1361920,
+          "zip_path": "firmware/v0.3.1/reticulum-lora-repeater-Heltec_T114-v0.3.1.zip",
+          "zip_size": 681671
+        },
+        {
+          "name": "RAK3401",
+          "hex_path": "firmware/v0.3.1/reticulum-lora-repeater-RAK3401-v0.3.1.hex",
+          "hex_size": 1914963,
+          "uf2_path": "firmware/v0.3.1/reticulum-lora-repeater-RAK3401-v0.3.1.uf2",
+          "uf2_size": 1361920,
+          "zip_path": "firmware/v0.3.1/reticulum-lora-repeater-RAK3401-v0.3.1.zip",
+          "zip_size": 681599
+        },
+        {
+          "name": "RAK4631",
+          "hex_path": "firmware/v0.3.1/reticulum-lora-repeater-RAK4631-v0.3.1.hex",
+          "hex_size": 1914918,
+          "uf2_path": "firmware/v0.3.1/reticulum-lora-repeater-RAK4631-v0.3.1.uf2",
+          "uf2_size": 1361920,
+          "zip_path": "firmware/v0.3.1/reticulum-lora-repeater-RAK4631-v0.3.1.zip",
+          "zip_size": 681583
+        },
+        {
+          "name": "XIAO_nRF52840",
+          "hex_path": "firmware/v0.3.1/reticulum-lora-repeater-XIAO_nRF52840-v0.3.1.hex",
+          "hex_size": 1915953,
+          "uf2_path": "firmware/v0.3.1/reticulum-lora-repeater-XIAO_nRF52840-v0.3.1.uf2",
+          "uf2_size": 1362432,
+          "zip_path": "firmware/v0.3.1/reticulum-lora-repeater-XIAO_nRF52840-v0.3.1.zip",
+          "zip_size": 681951
+        }
+      ]
+    },
     {
       "tag": "v0.3.0",
       "prerelease": false,
