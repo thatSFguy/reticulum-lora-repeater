@@ -119,34 +119,39 @@ class RLRConsole {
     // response read starts from a clean slate.
     this._drainAsync();
     this.log('tx', '> ' + cmd);
-    await this.writer.write(cmd + '\n');
 
-    // The firmware echoes characters as they arrive and then prints
-    // the newline itself, so the first line we get back will be the
-    // echo of the command we just sent. Discard it if it matches.
-    // Some lines drift in from the RNS stack mid-response ([---] etc.)
-    // and we also skip those silently.
+    // Set up the response collector BEFORE writing the command so
+    // fast transports (BLE notifications) don't race ahead and dump
+    // response lines into onUnsolicited before we're listening.
     const payload = [];
     let sawEcho = false;
+    const isBle = !!(this.port && this.port._ble);
     const deadline = Date.now() + timeoutMs;
-    while (true) {
-      const remaining = Math.max(50, deadline - Date.now());
-      const line = await this.nextLine(remaining);
-      // Skip any async noise from the RNS log stream: "[VRB] ...",
-      // "[DBG] ...", "[alive] ..." etc. Real responses never start
-      // with '[' in the first column.
-      if (line.startsWith('[')) continue;
-      if (!sawEcho && line.trim() === cmd.trim()) { sawEcho = true; continue; }
 
-      if (line === 'OK') { this.log('ok', 'OK'); return { ok: true, payload }; }
-      if (line.startsWith('ERR:')) {
-        const err = line.slice(4).trim();
-        this.log('err', line);
-        return { ok: false, payload, error: err };
+    const collectPromise = (async () => {
+      while (true) {
+        const remaining = Math.max(50, deadline - Date.now());
+        const line = await this.nextLine(remaining);
+        // Skip any async noise from the RNS log stream: "[VRB] ...",
+        // "[DBG] ...", "[alive] ..." etc. Real responses never start
+        // with '[' in the first column.
+        if (line.startsWith('[')) continue;
+        // Serial echoes the command back; BLE does not.
+        if (!isBle && !sawEcho && line.trim() === cmd.trim()) { sawEcho = true; continue; }
+
+        if (line === 'OK') { this.log('ok', 'OK'); return { ok: true, payload }; }
+        if (line.startsWith('ERR:')) {
+          const err = line.slice(4).trim();
+          this.log('err', line);
+          return { ok: false, payload, error: err };
+        }
+        payload.push(line);
+        this.log('info', line);
       }
-      payload.push(line);
-      this.log('info', line);
-    }
+    })();
+
+    await this.writer.write(cmd + '\n');
+    return collectPromise;
   }
 
   _drainAsync() {
