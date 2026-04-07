@@ -413,6 +413,10 @@ bool active() {
     return s_active;
 }
 
+bool connected() {
+    return s_connected;
+}
+
 }} // namespace rlr::ble
 
 #else // !HAS_BLE
@@ -421,6 +425,7 @@ namespace rlr { namespace ble {
     bool init(const Config&) { return false; }
     void tick() {}
     bool active() { return false; }
+    bool connected() { return false; }
 }} // namespace rlr::ble
 
 #endif // HAS_BLE

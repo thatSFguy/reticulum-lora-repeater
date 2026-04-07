@@ -7,7 +7,6 @@
 // include/board/<name>.h file — nothing in this driver changes.
 
 #include "Radio.h"
-#include "Ble.h"
 #include <Arduino.h>
 #include <SPI.h>
 #include <RadioLib.h>
@@ -274,25 +273,11 @@ int transmit(const uint8_t* buf, size_t len) {
     tx_buf[0] = rnode_header;
     memcpy(tx_buf + 1, buf, len);
 
-    // Non-blocking TX: start transmission, then poll with delay(1)
-    // yields so the SoftDevice can process BLE connection events.
-    // RadioLib's blocking transmit() busy-waits on SPI for the
-    // entire LoRa airtime (~100-800ms), which starves the BLE stack
-    // and causes supervision timeout disconnects (reason=0x08).
-    int state = s_radio.startTransmit(tx_buf, len + 1);
-    if (state == RADIOLIB_ERR_NONE) {
-        // Poll DIO1 for TX_DONE. Yield during poll only when BLE is
-        // active — otherwise tight-loop for fastest RX turnaround.
-        if (rlr::ble::active()) {
-            while (digitalRead(PIN_LORA_DIO1) == LOW) {
-                delay(1);  // yield to SoftDevice BLE event processing
-            }
-        } else {
-            while (digitalRead(PIN_LORA_DIO1) == LOW) { /* busy-wait */ }
-        }
-        // Clear IRQ flags on the radio
-        s_radio.finishTransmit();
-    }
+    // RadioLib's transmit() is blocking — it puts the chip in TX
+    // mode, waits for TX_DONE, and then returns. LoRa activity is
+    // paused in the main loop when BLE is connected, so this
+    // blocking call won't starve the SoftDevice.
+    int state = s_radio.transmit(tx_buf, len + 1);
     s_radio.startReceive();
     // Clear the ISR flag AFTER re-entering RX. The SX1262's DIO1
     // line can glitch during the TX→Standby→RX transition, causing

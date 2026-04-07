@@ -142,9 +142,15 @@ void setup() {
 // so via millis()-based state machines, never delay().
 // -------------------------------------------------------------------
 void loop() {
-    rlr::transport::tick();
-    rlr::telemetry::tick(g_config);
-    rlr::lxmf_presence::tick(g_config);
+    // Pause LoRa radio activity while a BLE device is connected.
+    // SX1262 SPI transactions block the MCU and starve the SoftDevice,
+    // causing BLE supervision timeout disconnects. The user is
+    // configuring during BLE — LoRa can wait.
+    if (!rlr::ble::connected()) {
+        rlr::transport::tick();
+        rlr::telemetry::tick(g_config);
+        rlr::lxmf_presence::tick(g_config);
+    }
     rlr::led::heartbeat_tick(g_config);
     rlr::serial_console::tick();
     rlr::ble::tick();

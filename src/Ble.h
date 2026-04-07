@@ -24,4 +24,7 @@ void tick();
 // Returns true if BLE was initialized and is advertising.
 bool active();
 
+// Returns true if a BLE device is currently connected and authenticated.
+bool connected();
+
 }} // namespace rlr::ble
