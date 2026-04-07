@@ -170,8 +170,8 @@ static void cmd_config_get(Print& out) {
     ok(out);
 }
 
-static void cmd_config_getjson(Print& out) {
-    config::print_fields_json(s_staging, out);
+static void cmd_config_getp(Print& out) {
+    config::print_fields_pipe(s_staging, out);
     ok(out);
 }
 
@@ -181,10 +181,8 @@ static void cmd_config_set(Print& out, char* rest) {
     char* value = split_kv(rest);
     const char* key = rest;
     if (*value == '\0') { err(out, "missing value"); return; }
-    if (!config::set_field(s_staging, key, value)) {
-        err(out, "invalid key or value out of range");
-        return;
-    }
+    const char* e = config::set_field(s_staging, key, value);
+    if (e) { err(out, e); return; }
     ok(out);
 }
 
@@ -249,7 +247,7 @@ static void dispatch(char* line, Print& out) {
         upper(upper_sub);
 
         if (strcmp(upper_sub, "GET")     == 0) { cmd_config_get(out);     return; }
-        if (strcmp(upper_sub, "GETJSON")== 0) { cmd_config_getjson(out); return; }
+        if (strcmp(upper_sub, "GETP")   == 0) { cmd_config_getp(out);    return; }
         if (strcmp(upper_sub, "RESET")  == 0) { cmd_config_reset(out);   return; }
         if (strcmp(upper_sub, "REVERT") == 0) { cmd_config_revert(out); return; }
         if (strcmp(upper_sub, "COMMIT") == 0) { cmd_config_commit(out); return; }

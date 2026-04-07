@@ -91,9 +91,10 @@ bool validate(const Config& cfg);
 
 // Set/get helpers for the serial console. They operate on a staging
 // copy; nothing is persisted until save() is called.
-bool set_field(Config& cfg, const char* key, const char* value);
+// Returns nullptr on success, or a static error string on failure.
+const char* set_field(Config& cfg, const char* key, const char* value);
 void print_fields(const Config& cfg, Print& out);       // writes "key=value" lines to out
-void print_fields_json(const Config& cfg, Print& out);  // writes single-line JSON to out
+void print_fields_pipe(const Config& cfg, Print& out);   // writes single pipe-delimited line
 
 } // namespace config
 } // namespace rlr

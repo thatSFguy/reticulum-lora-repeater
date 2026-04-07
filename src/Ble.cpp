@@ -137,7 +137,6 @@ bool init(const Config& cfg) {
     }
 
     Bluefruit.begin();
-    bond_clear_prph();        // clear stale bonds so PIN is always prompted
     Bluefruit.setTxPower(4);  // moderate TX power for config range
 
     // Use display_name as BLE device name (truncated to 20 chars)

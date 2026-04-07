@@ -319,124 +319,128 @@ static bool parse_bool(const char* v, bool& out) {
     return false;
 }
 
-bool set_field(Config& cfg, const char* key, const char* value) {
-    if (!key || !value) return false;
+const char* set_field(Config& cfg, const char* key, const char* value) {
+    if (!key || !value) return "missing key or value";
 
     if (streq(key, "display_name")) {
         size_t n = strlen(value);
-        if (n == 0 || n >= sizeof(cfg.display_name)) return false;
+        if (n == 0)                          return "display_name must not be empty";
+        if (n >= sizeof(cfg.display_name))   return "display_name max 31 chars";
+        for (size_t i = 0; i < n; i++) {
+            if (value[i] == '|')             return "display_name must not contain '|'";
+        }
         memset(cfg.display_name, 0, sizeof(cfg.display_name));
         memcpy(cfg.display_name, value, n);
-        return true;
+        return nullptr;
     }
     if (streq(key, "freq_hz")) {
         char* end = nullptr;
         unsigned long v = strtoul(value, &end, 10);
-        if (end == value || *end != '\0') return false;
-        if (v < 100000000UL || v > 1100000000UL) return false;
+        if (end == value || *end != '\0')    return "freq_hz must be an integer";
+        if (v < 100000000UL || v > 1100000000UL) return "freq_hz range 100000000..1100000000";
         cfg.freq_hz = (uint32_t)v;
-        return true;
+        return nullptr;
     }
     if (streq(key, "bw_hz")) {
         char* end = nullptr;
         unsigned long v = strtoul(value, &end, 10);
-        if (end == value || *end != '\0') return false;
-        if (v < 7800UL || v > 500000UL) return false;
+        if (end == value || *end != '\0')    return "bw_hz must be an integer";
+        if (v < 7800UL || v > 500000UL)     return "bw_hz range 7800..500000";
         cfg.bw_hz = (uint32_t)v;
-        return true;
+        return nullptr;
     }
     if (streq(key, "sf")) {
         char* end = nullptr;
         long v = strtol(value, &end, 10);
-        if (end == value || *end != '\0') return false;
-        if (v < 7 || v > 12) return false;
+        if (end == value || *end != '\0')    return "sf must be an integer";
+        if (v < 7 || v > 12)                return "sf range 7..12";
         cfg.sf = (uint8_t)v;
-        return true;
+        return nullptr;
     }
     if (streq(key, "cr")) {
         char* end = nullptr;
         long v = strtol(value, &end, 10);
-        if (end == value || *end != '\0') return false;
-        if (v < 5 || v > 8) return false;
+        if (end == value || *end != '\0')    return "cr must be an integer";
+        if (v < 5 || v > 8)                 return "cr range 5..8";
         cfg.cr = (uint8_t)v;
-        return true;
+        return nullptr;
     }
     if (streq(key, "txp_dbm")) {
         char* end = nullptr;
         long v = strtol(value, &end, 10);
-        if (end == value || *end != '\0') return false;
-        if (v < -9 || v > 22) return false;
+        if (end == value || *end != '\0')    return "txp_dbm must be an integer";
+        if (v < -9 || v > 22)               return "txp_dbm range -9..22";
         cfg.txp_dbm = (int8_t)v;
-        return true;
+        return nullptr;
     }
     if (streq(key, "batt_mult")) {
         char* end = nullptr;
         float v = strtof(value, &end);
-        if (end == value || *end != '\0') return false;
-        if (v <= 0.0f || v > 10.0f) return false;
+        if (end == value || *end != '\0')    return "batt_mult must be a number";
+        if (v <= 0.0f || v > 10.0f)         return "batt_mult range 0.01..10.0";
         cfg.batt_mult = v;
-        return true;
+        return nullptr;
     }
     if (streq(key, "tele_interval_ms")) {
         char* end = nullptr;
         unsigned long v = strtoul(value, &end, 10);
-        if (end == value || *end != '\0') return false;
+        if (end == value || *end != '\0')    return "tele_interval_ms must be an integer";
         cfg.tele_interval_ms = (uint32_t)v;
-        return true;
+        return nullptr;
     }
     if (streq(key, "lxmf_interval_ms")) {
         char* end = nullptr;
         unsigned long v = strtoul(value, &end, 10);
-        if (end == value || *end != '\0') return false;
+        if (end == value || *end != '\0')    return "lxmf_interval_ms must be an integer";
         cfg.lxmf_interval_ms = (uint32_t)v;
-        return true;
+        return nullptr;
     }
     if (streq(key, "telemetry") || streq(key, "lxmf") || streq(key, "heartbeat") || streq(key, "bt_enabled")) {
         bool b;
-        if (!parse_bool(value, b)) return false;
+        if (!parse_bool(value, b))           return "expected 0/1, true/false, on/off, yes/no";
         uint8_t bit = streq(key, "telemetry")  ? CONFIG_FLAG_TELEMETRY
                     : streq(key, "lxmf")       ? CONFIG_FLAG_LXMF
                     : streq(key, "heartbeat")  ? CONFIG_FLAG_HEARTBEAT
                                                : CONFIG_FLAG_BT_ENABLED;
         if (b) cfg.flags |=  bit;
         else   cfg.flags &= ~bit;
-        return true;
+        return nullptr;
     }
     if (streq(key, "bt_pin")) {
         char* end = nullptr;
         unsigned long v = strtoul(value, &end, 10);
-        if (end == value || *end != '\0') return false;
-        if (v > 999999) return false;
+        if (end == value || *end != '\0')    return "bt_pin must be an integer";
+        if (v > 999999)                      return "bt_pin range 0..999999";
         cfg.bt_pin = (uint32_t)v;
-        return true;
+        return nullptr;
     }
     if (streq(key, "latitude")) {
         char* end = nullptr;
         double v = strtod(value, &end);
-        if (end == value || *end != '\0') return false;
+        if (end == value || *end != '\0')    return "latitude must be a number";
         int32_t udeg = (int32_t)(v * 1000000.0);
-        if (udeg < -90000000 || udeg > 90000000) return false;
+        if (udeg < -90000000 || udeg > 90000000) return "latitude range -90..90";
         cfg.latitude_udeg = udeg;
-        return true;
+        return nullptr;
     }
     if (streq(key, "longitude")) {
         char* end = nullptr;
         double v = strtod(value, &end);
-        if (end == value || *end != '\0') return false;
+        if (end == value || *end != '\0')    return "longitude must be a number";
         int32_t udeg = (int32_t)(v * 1000000.0);
-        if (udeg < -180000000 || udeg > 180000000) return false;
+        if (udeg < -180000000 || udeg > 180000000) return "longitude range -180..180";
         cfg.longitude_udeg = udeg;
-        return true;
+        return nullptr;
     }
     if (streq(key, "altitude")) {
         char* end = nullptr;
         long v = strtol(value, &end, 10);
-        if (end == value || *end != '\0') return false;
-        if (v < -100000 || v > 100000) return false;
+        if (end == value || *end != '\0')    return "altitude must be an integer";
+        if (v < -100000 || v > 100000)       return "altitude range -100000..100000";
         cfg.altitude_m = (int32_t)v;
-        return true;
+        return nullptr;
     }
-    return false;
+    return "unknown key";
 }
 
 void print_fields(const Config& cfg, Print& out) {
@@ -459,29 +463,32 @@ void print_fields(const Config& cfg, Print& out) {
     out.print("altitude=");         out.println(cfg.altitude_m);
 }
 
-void print_fields_json(const Config& cfg, Print& out) {
-    // Write JSON field-by-field using small buffers. Avoids a single
-    // large snprintf that can overflow and plays better with BLE UART's
-    // internal FIFO chunking. No newlines until the final print so the
-    // webapp receives the entire object as one logical line.
-    char b[64];
-    out.print("{\"display_name\":\""); out.print(cfg.display_name); out.print("\"");
-    snprintf(b, sizeof(b), ",\"freq_hz\":%lu",          (unsigned long)cfg.freq_hz);         out.print(b);
-    snprintf(b, sizeof(b), ",\"bw_hz\":%lu",            (unsigned long)cfg.bw_hz);           out.print(b);
-    snprintf(b, sizeof(b), ",\"sf\":%u",                (unsigned)cfg.sf);                   out.print(b);
-    snprintf(b, sizeof(b), ",\"cr\":%u",                (unsigned)cfg.cr);                   out.print(b);
-    snprintf(b, sizeof(b), ",\"txp_dbm\":%d",           (int)cfg.txp_dbm);                  out.print(b);
-    snprintf(b, sizeof(b), ",\"batt_mult\":%.4f",       (double)cfg.batt_mult);              out.print(b);
-    snprintf(b, sizeof(b), ",\"tele_interval_ms\":%lu", (unsigned long)cfg.tele_interval_ms);out.print(b);
-    snprintf(b, sizeof(b), ",\"lxmf_interval_ms\":%lu", (unsigned long)cfg.lxmf_interval_ms);out.print(b);
-    snprintf(b, sizeof(b), ",\"telemetry\":%d",         (cfg.flags & CONFIG_FLAG_TELEMETRY)  ? 1 : 0); out.print(b);
-    snprintf(b, sizeof(b), ",\"lxmf\":%d",              (cfg.flags & CONFIG_FLAG_LXMF)       ? 1 : 0); out.print(b);
-    snprintf(b, sizeof(b), ",\"heartbeat\":%d",         (cfg.flags & CONFIG_FLAG_HEARTBEAT)  ? 1 : 0); out.print(b);
-    snprintf(b, sizeof(b), ",\"bt_enabled\":%d",        (cfg.flags & CONFIG_FLAG_BT_ENABLED) ? 1 : 0); out.print(b);
-    snprintf(b, sizeof(b), ",\"bt_pin\":%lu",           (unsigned long)cfg.bt_pin);          out.print(b);
-    snprintf(b, sizeof(b), ",\"latitude\":%.6f",        cfg.latitude_udeg  / 1000000.0);     out.print(b);
-    snprintf(b, sizeof(b), ",\"longitude\":%.6f",       cfg.longitude_udeg / 1000000.0);     out.print(b);
-    snprintf(b, sizeof(b), ",\"altitude\":%ld}",        (long)cfg.altitude_m);               out.println(b);
+void print_fields_pipe(const Config& cfg, Print& out) {
+    // Pipe-delimited single line — max ~133 chars worst case.
+    // Field order: display_name|freq_hz|bw_hz|sf|cr|txp_dbm|batt_mult|
+    //   tele_interval_ms|lxmf_interval_ms|telemetry|lxmf|heartbeat|
+    //   bt_enabled|bt_pin|latitude|longitude|altitude
+    char buf[160];
+    int n = snprintf(buf, sizeof(buf),
+        "%s|%lu|%lu|%u|%u|%d|%.4f|%lu|%lu|%d|%d|%d|%d|%lu|%.6f|%.6f|%ld",
+        cfg.display_name,
+        (unsigned long)cfg.freq_hz,
+        (unsigned long)cfg.bw_hz,
+        (unsigned)cfg.sf,
+        (unsigned)cfg.cr,
+        (int)cfg.txp_dbm,
+        (double)cfg.batt_mult,
+        (unsigned long)cfg.tele_interval_ms,
+        (unsigned long)cfg.lxmf_interval_ms,
+        (cfg.flags & CONFIG_FLAG_TELEMETRY)  ? 1 : 0,
+        (cfg.flags & CONFIG_FLAG_LXMF)       ? 1 : 0,
+        (cfg.flags & CONFIG_FLAG_HEARTBEAT)  ? 1 : 0,
+        (cfg.flags & CONFIG_FLAG_BT_ENABLED) ? 1 : 0,
+        (unsigned long)cfg.bt_pin,
+        cfg.latitude_udeg  / 1000000.0,
+        cfg.longitude_udeg / 1000000.0,
+        (long)cfg.altitude_m);
+    if (n > 0 && n < (int)sizeof(buf)) out.println(buf);
 }
 
 }} // namespace rlr::config

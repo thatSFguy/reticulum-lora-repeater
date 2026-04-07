@@ -173,17 +173,31 @@ class RLRConsole {
   async ping()        { const r = await this.send('PING');       if (!r.ok) throw new Error(r.error); }
   async version()     { const r = await this.send('VERSION');    if (!r.ok) throw new Error(r.error); return this.parseKV(r.payload); }
   async status()      { const r = await this.send('STATUS');     if (!r.ok) throw new Error(r.error); return this.parseKV(r.payload); }
+  // Pipe-delimited field order — must match firmware's print_fields_pipe()
+  static get PIPE_FIELDS() {
+    return ['display_name','freq_hz','bw_hz','sf','cr','txp_dbm','batt_mult',
+            'tele_interval_ms','lxmf_interval_ms','telemetry','lxmf','heartbeat',
+            'bt_enabled','bt_pin','latitude','longitude','altitude'];
+  }
+
+  parsePipe(line) {
+    const parts = line.split('|');
+    const fields = RLRConsole.PIPE_FIELDS;
+    if (parts.length !== fields.length) return null;
+    const out = {};
+    for (let i = 0; i < fields.length; i++) out[fields[i]] = parts[i];
+    return out;
+  }
+
   async configGet() {
-    // Prefer GETJSON (single-line JSON, reliable over BLE).
+    // Prefer GETP (pipe-delimited single line, reliable over BLE).
     // Fall back to line-by-line GET for older firmware.
-    // Use a longer timeout for BLE since the JSON is ~300 bytes
-    // chunked across many BLE notifications.
     const timeout = (this.port && this.port._ble) ? 10000 : 5000;
     try {
-      const r = await this.send('CONFIG GETJSON', timeout);
+      const r = await this.send('CONFIG GETP', timeout);
       if (r.ok && r.payload.length > 0) {
-        const json = r.payload.join('');
-        return JSON.parse(json);
+        const parsed = this.parsePipe(r.payload.join(''));
+        if (parsed) return parsed;
       }
     } catch (e) { /* fall through to legacy */ }
     const r = await this.send('CONFIG GET', timeout);
@@ -215,10 +229,25 @@ class RLRConsole {
       filters: [{ services: [NUS_SERVICE] }],
     });
 
-    const server  = await device.gatt.connect();
-    const service = await server.getPrimaryService(NUS_SERVICE);
-    const txChar  = await service.getCharacteristic(NUS_TX_CHAR);
-    const rxChar  = await service.getCharacteristic(NUS_RX_CHAR);
+    // Connect with retry — GATT can disconnect during service discovery
+    // if pairing/bonding needs to settle. Give it up to 3 attempts.
+    let server, service, txChar, rxChar;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        server  = await device.gatt.connect();
+        // Small delay after GATT connect to let pairing/encryption settle
+        await new Promise(r => setTimeout(r, 500));
+        if (!server.connected) throw new Error('GATT disconnected during pairing');
+        service = await server.getPrimaryService(NUS_SERVICE);
+        txChar  = await service.getCharacteristic(NUS_TX_CHAR);
+        rxChar  = await service.getCharacteristic(NUS_RX_CHAR);
+        break;
+      } catch (e) {
+        if (attempt === 3) throw e;
+        this.log && this.log('info', `BLE connect attempt ${attempt} failed: ${e.message}, retrying...`);
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
 
     await txChar.startNotifications();
     this._bleDevice = device;
@@ -482,7 +511,57 @@ class RLRConsole {
     };
   }
 
+  // Client-side validation — mirrors firmware set_field() ranges.
+  // Returns an array of error strings, empty if all OK.
+  function validateForm() {
+    const errs = [];
+    const name = $('cfg-display_name').value;
+    if (!name || name.length === 0)  errs.push('Display name must not be empty');
+    if (name.length > 31)            errs.push('Display name max 31 characters');
+    if (name.includes('|'))          errs.push('Display name must not contain "|"');
+
+    const freq = parseFloat($('cfg-freq_mhz').value);
+    if (isNaN(freq) || freq < 100 || freq > 1100) errs.push('Frequency must be 100..1100 MHz');
+
+    const bw = parseInt($('cfg-bw_hz').value);
+    if (isNaN(bw) || bw < 7800 || bw > 500000) errs.push('Bandwidth must be 7800..500000 Hz');
+
+    const sf = parseInt($('cfg-sf').value);
+    if (isNaN(sf) || sf < 7 || sf > 12) errs.push('Spreading factor must be 7..12');
+
+    const cr = parseInt($('cfg-cr').value);
+    if (isNaN(cr) || cr < 5 || cr > 8) errs.push('Coding rate must be 5..8');
+
+    const txp = parseInt($('cfg-txp_dbm').value);
+    if (isNaN(txp) || txp < -9 || txp > 22) errs.push('TX power must be -9..22 dBm');
+
+    const tele = parseFloat($('cfg-tele_interval_min').value);
+    if (isNaN(tele) || tele < 0) errs.push('Telemetry interval must be >= 0 minutes');
+
+    const lxmf = parseFloat($('cfg-lxmf_interval_min').value);
+    if (isNaN(lxmf) || lxmf < 0) errs.push('LXMF interval must be >= 0 minutes');
+
+    const pin = parseInt($('cfg-bt_pin').value);
+    if (isNaN(pin) || pin < 0 || pin > 999999) errs.push('BT PIN must be 0..999999');
+
+    const lat = parseFloat($('cfg-latitude').value);
+    if (isNaN(lat) || lat < -90 || lat > 90) errs.push('Latitude must be -90..90');
+
+    const lon = parseFloat($('cfg-longitude').value);
+    if (isNaN(lon) || lon < -180 || lon > 180) errs.push('Longitude must be -180..180');
+
+    const alt = parseInt($('cfg-altitude').value);
+    if (isNaN(alt) || alt < -100000 || alt > 100000) errs.push('Altitude must be -100000..100000 m');
+
+    return errs;
+  }
+
   $('btn-commit').addEventListener('click', async () => {
+    const validationErrors = validateForm();
+    if (validationErrors.length > 0) {
+      for (const e of validationErrors) log('err', 'Validation: ' + e);
+      return;
+    }
     const vals = formValues();
     // Only push fields that actually changed — quieter log, fewer
     // round-trips, and it plays nicely with firmware-managed fields
