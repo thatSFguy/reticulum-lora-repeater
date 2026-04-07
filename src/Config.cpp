@@ -464,31 +464,30 @@ void print_fields(const Config& cfg, Print& out) {
 }
 
 void print_fields_pipe(const Config& cfg, Print& out) {
-    // Pipe-delimited single line — max ~133 chars worst case.
+    // Pipe-delimited single line using Print methods (no snprintf).
+    // Arduino's Print::print(float) handles float formatting reliably
+    // on ARM newlib where snprintf %f can fail silently.
+    //
     // Field order: display_name|freq_hz|bw_hz|sf|cr|txp_dbm|batt_mult|
     //   tele_interval_ms|lxmf_interval_ms|telemetry|lxmf|heartbeat|
     //   bt_enabled|bt_pin|latitude|longitude|altitude
-    char buf[160];
-    int n = snprintf(buf, sizeof(buf),
-        "%s|%lu|%lu|%u|%u|%d|%.4f|%lu|%lu|%d|%d|%d|%d|%lu|%.6f|%.6f|%ld",
-        cfg.display_name,
-        (unsigned long)cfg.freq_hz,
-        (unsigned long)cfg.bw_hz,
-        (unsigned)cfg.sf,
-        (unsigned)cfg.cr,
-        (int)cfg.txp_dbm,
-        (double)cfg.batt_mult,
-        (unsigned long)cfg.tele_interval_ms,
-        (unsigned long)cfg.lxmf_interval_ms,
-        (cfg.flags & CONFIG_FLAG_TELEMETRY)  ? 1 : 0,
-        (cfg.flags & CONFIG_FLAG_LXMF)       ? 1 : 0,
-        (cfg.flags & CONFIG_FLAG_HEARTBEAT)  ? 1 : 0,
-        (cfg.flags & CONFIG_FLAG_BT_ENABLED) ? 1 : 0,
-        (unsigned long)cfg.bt_pin,
-        cfg.latitude_udeg  / 1000000.0,
-        cfg.longitude_udeg / 1000000.0,
-        (long)cfg.altitude_m);
-    if (n > 0 && n < (int)sizeof(buf)) out.println(buf);
+    out.print(cfg.display_name);       out.print('|');
+    out.print(cfg.freq_hz);            out.print('|');
+    out.print(cfg.bw_hz);              out.print('|');
+    out.print(cfg.sf);                 out.print('|');
+    out.print(cfg.cr);                 out.print('|');
+    out.print(cfg.txp_dbm);           out.print('|');
+    out.print(cfg.batt_mult, 4);       out.print('|');
+    out.print(cfg.tele_interval_ms);   out.print('|');
+    out.print(cfg.lxmf_interval_ms);   out.print('|');
+    out.print((cfg.flags & CONFIG_FLAG_TELEMETRY)  ? 1 : 0); out.print('|');
+    out.print((cfg.flags & CONFIG_FLAG_LXMF)       ? 1 : 0); out.print('|');
+    out.print((cfg.flags & CONFIG_FLAG_HEARTBEAT)  ? 1 : 0); out.print('|');
+    out.print((cfg.flags & CONFIG_FLAG_BT_ENABLED) ? 1 : 0); out.print('|');
+    out.print(cfg.bt_pin);             out.print('|');
+    out.print(cfg.latitude_udeg  / 1000000.0, 6); out.print('|');
+    out.print(cfg.longitude_udeg / 1000000.0, 6); out.print('|');
+    out.println(cfg.altitude_m);
 }
 
 }} // namespace rlr::config
