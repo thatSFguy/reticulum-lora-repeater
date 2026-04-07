@@ -41,7 +41,7 @@
 #define HAS_BATTERY_SENSE       1      // P0.31 via voltage divider
 #define HAS_VEXT_RAIL           0      // no GPIO-gated power rail; radio is always on
 #define HAS_DISPLAY             0
-#define HAS_BLE                 0      // intentionally disabled in v0.1
+#define HAS_BLE                 1
 #define HAS_PMU                 0
 
 // ---- MCU / SRAM budget --------------------------------------------

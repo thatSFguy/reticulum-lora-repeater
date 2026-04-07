@@ -26,6 +26,12 @@ namespace rlr { namespace config {
 // transport_identity files that microReticulum manages on its own.
 static constexpr const char* CONFIG_PATH = "/config.bin";
 
+// Size of the v1 Config struct on disk (before bt_pin/lat/lon/alt fields).
+// v1 layout: version(2) + _reserved(2) + freq_hz(4) + bw_hz(4) + sf(1) +
+//   cr(1) + txp_dbm(1) + flags(1) + batt_mult(4) + tele_interval_ms(4) +
+//   lxmf_interval_ms(4) + display_name(32) + crc32(4) = 64 bytes.
+static constexpr size_t CONFIG_V1_SIZE = 64;
+
 // --- CRC-32 helper (zlib polynomial 0xEDB88320, reflected) -------
 //
 // Tiny local implementation so we don't pull in a dependency just for
@@ -51,7 +57,7 @@ static uint32_t crc32_of(const uint8_t* data, size_t len) {
 
 void defaults(Config& out) {
     memset(&out, 0, sizeof(out));
-    out.version          = 1;
+    out.version          = 2;
     out.freq_hz          = DEFAULT_CONFIG_FREQ_HZ;
     out.bw_hz            = DEFAULT_CONFIG_BW_HZ;
     out.sf               = DEFAULT_CONFIG_SF;
@@ -79,12 +85,19 @@ void defaults(Config& out) {
 // --- validate ----------------------------------------------------
 
 bool validate(const Config& cfg) {
-    if (cfg.version != 1)                               return false;
+    if (cfg.version != 1 && cfg.version != 2)           return false;
     if (cfg.sf < 7   || cfg.sf > 12)                    return false;
     if (cfg.cr < 5   || cfg.cr > 8)                     return false;
     if (cfg.txp_dbm < -9 || cfg.txp_dbm > 22)           return false;
     if (cfg.freq_hz < 100000000UL || cfg.freq_hz > 1100000000UL) return false;
     if (cfg.bw_hz   < 7800UL      || cfg.bw_hz   > 500000UL)     return false;
+    // v2 fields — only validate when present
+    if (cfg.version >= 2) {
+        if (cfg.bt_pin > 999999)                        return false;
+        if (cfg.latitude_udeg  < -90000000  || cfg.latitude_udeg  > 90000000)  return false;
+        if (cfg.longitude_udeg < -180000000 || cfg.longitude_udeg > 180000000) return false;
+        if (cfg.altitude_m < -100000 || cfg.altitude_m > 100000)               return false;
+    }
     // display_name must be NUL-terminated within the buffer
     bool terminated = false;
     for (size_t i = 0; i < sizeof(cfg.display_name); i++) {
@@ -108,7 +121,11 @@ bool load(Config& out) {
 
         RNS::Bytes data;
         size_t n = RNS::Utilities::OS::read_file(CONFIG_PATH, data);
-        if (n != sizeof(Config)) {
+
+        // Determine if this is a v1 or v2 record by file size.
+        // v1 = CONFIG_V1_SIZE bytes, v2 = sizeof(Config).
+        bool is_v1 = (n == CONFIG_V1_SIZE);
+        if (n != sizeof(Config) && !is_v1) {
             Serial.print("Config: /config.bin size mismatch (");
             Serial.print(n);
             Serial.print(" bytes, expected ");
@@ -118,6 +135,75 @@ bool load(Config& out) {
         }
 
         Config tmp;
+        memset(&tmp, 0, sizeof(tmp));  // zero-fill so v1 migration gets clean defaults
+
+        if (is_v1) {
+            // v1 layout is different from v2: display_name sits right
+            // after lxmf_interval_ms (no bt_pin/lat/lon/alt fields).
+            // We can't memcpy directly into a v2 struct, so we parse
+            // field-by-field from the raw bytes.
+            const uint8_t* p = data.data();
+
+            // Verify v1 CRC first (covers all bytes except trailing 4).
+            const size_t v1_crc_covered = CONFIG_V1_SIZE - sizeof(uint32_t);
+            uint32_t want;
+            memcpy(&want, p + v1_crc_covered, sizeof(uint32_t));
+            uint32_t actual = crc32_of(p, v1_crc_covered);
+            if (actual != want) {
+                Serial.print("Config: v1 CRC mismatch (got 0x");
+                Serial.print(actual, HEX);
+                Serial.print(", want 0x");
+                Serial.print(want, HEX);
+                Serial.println(")");
+                return false;
+            }
+
+            // Manually unpack v1 fields (all packed, no padding).
+            size_t off = 0;
+            memcpy(&tmp.version,          p + off, 2); off += 2;
+            memcpy(&tmp._reserved,        p + off, 2); off += 2;
+            memcpy(&tmp.freq_hz,          p + off, 4); off += 4;
+            memcpy(&tmp.bw_hz,            p + off, 4); off += 4;
+            memcpy(&tmp.sf,               p + off, 1); off += 1;
+            memcpy(&tmp.cr,               p + off, 1); off += 1;
+            memcpy(&tmp.txp_dbm,          p + off, 1); off += 1;
+            memcpy(&tmp.flags,            p + off, 1); off += 1;
+            memcpy(&tmp.batt_mult,        p + off, 4); off += 4;
+            memcpy(&tmp.tele_interval_ms, p + off, 4); off += 4;
+            memcpy(&tmp.lxmf_interval_ms, p + off, 4); off += 4;
+            // In v1 display_name is next (no bt/location fields)
+            memcpy(&tmp.display_name,     p + off, 32); off += 32;
+            // off == 60, then crc32 at 60..63 (already verified)
+
+            // Validate the v1 fields
+            if (!validate(tmp)) {
+                Serial.println("Config: v1 CRC OK but field validation failed");
+                return false;
+            }
+
+            // Migrate: set v2 defaults for new fields, bump version
+            tmp.bt_pin         = 0;
+            tmp.latitude_udeg  = 0;
+            tmp.longitude_udeg = 0;
+            tmp.altitude_m     = 0;
+            tmp.flags         &= ~CONFIG_FLAG_BT_ENABLED;  // BT off by default
+            tmp.version        = 2;
+
+            // Re-compute CRC for the v2 layout and persist so future
+            // boots take the fast path.
+            tmp.crc32 = 0;
+            const size_t v2_crc_covered = sizeof(Config) - sizeof(uint32_t);
+            tmp.crc32 = crc32_of(reinterpret_cast<const uint8_t*>(&tmp), v2_crc_covered);
+
+            RNS::Bytes migrated(reinterpret_cast<const uint8_t*>(&tmp), sizeof(Config));
+            RNS::Utilities::OS::write_file(CONFIG_PATH, migrated);
+            Serial.println("Config: migrated v1 -> v2");
+
+            out = tmp;
+            return true;
+        }
+
+        // Normal v2 load path
         memcpy(&tmp, data.data(), sizeof(Config));
 
         // CRC32 covers every byte before the crc32 field itself.
@@ -165,7 +251,7 @@ bool save(const Config& in) {
         }
 
         Config tmp = in;
-        tmp.version = 1;
+        tmp.version = 2;
         tmp.crc32   = 0;
         const size_t crc_covered = sizeof(Config) - sizeof(uint32_t);
         tmp.crc32 = crc32_of(reinterpret_cast<const uint8_t*>(&tmp), crc_covered);
@@ -305,32 +391,72 @@ bool set_field(Config& cfg, const char* key, const char* value) {
         cfg.lxmf_interval_ms = (uint32_t)v;
         return true;
     }
-    if (streq(key, "telemetry") || streq(key, "lxmf") || streq(key, "heartbeat")) {
+    if (streq(key, "telemetry") || streq(key, "lxmf") || streq(key, "heartbeat") || streq(key, "bt_enabled")) {
         bool b;
         if (!parse_bool(value, b)) return false;
-        uint8_t bit = streq(key, "telemetry") ? CONFIG_FLAG_TELEMETRY
-                    : streq(key, "lxmf")      ? CONFIG_FLAG_LXMF
-                                              : CONFIG_FLAG_HEARTBEAT;
+        uint8_t bit = streq(key, "telemetry")  ? CONFIG_FLAG_TELEMETRY
+                    : streq(key, "lxmf")       ? CONFIG_FLAG_LXMF
+                    : streq(key, "heartbeat")  ? CONFIG_FLAG_HEARTBEAT
+                                               : CONFIG_FLAG_BT_ENABLED;
         if (b) cfg.flags |=  bit;
         else   cfg.flags &= ~bit;
+        return true;
+    }
+    if (streq(key, "bt_pin")) {
+        char* end = nullptr;
+        unsigned long v = strtoul(value, &end, 10);
+        if (end == value || *end != '\0') return false;
+        if (v > 999999) return false;
+        cfg.bt_pin = (uint32_t)v;
+        return true;
+    }
+    if (streq(key, "latitude")) {
+        char* end = nullptr;
+        double v = strtod(value, &end);
+        if (end == value || *end != '\0') return false;
+        int32_t udeg = (int32_t)(v * 1000000.0);
+        if (udeg < -90000000 || udeg > 90000000) return false;
+        cfg.latitude_udeg = udeg;
+        return true;
+    }
+    if (streq(key, "longitude")) {
+        char* end = nullptr;
+        double v = strtod(value, &end);
+        if (end == value || *end != '\0') return false;
+        int32_t udeg = (int32_t)(v * 1000000.0);
+        if (udeg < -180000000 || udeg > 180000000) return false;
+        cfg.longitude_udeg = udeg;
+        return true;
+    }
+    if (streq(key, "altitude")) {
+        char* end = nullptr;
+        long v = strtol(value, &end, 10);
+        if (end == value || *end != '\0') return false;
+        if (v < -100000 || v > 100000) return false;
+        cfg.altitude_m = (int32_t)v;
         return true;
     }
     return false;
 }
 
-void print_fields(const Config& cfg) {
-    Serial.print("display_name=");     Serial.println(cfg.display_name);
-    Serial.print("freq_hz=");          Serial.println(cfg.freq_hz);
-    Serial.print("bw_hz=");            Serial.println(cfg.bw_hz);
-    Serial.print("sf=");               Serial.println(cfg.sf);
-    Serial.print("cr=");               Serial.println(cfg.cr);
-    Serial.print("txp_dbm=");          Serial.println(cfg.txp_dbm);
-    Serial.print("batt_mult=");        Serial.println(cfg.batt_mult, 4);
-    Serial.print("tele_interval_ms="); Serial.println(cfg.tele_interval_ms);
-    Serial.print("lxmf_interval_ms="); Serial.println(cfg.lxmf_interval_ms);
-    Serial.print("telemetry=");        Serial.println((cfg.flags & CONFIG_FLAG_TELEMETRY) ? 1 : 0);
-    Serial.print("lxmf=");             Serial.println((cfg.flags & CONFIG_FLAG_LXMF)      ? 1 : 0);
-    Serial.print("heartbeat=");        Serial.println((cfg.flags & CONFIG_FLAG_HEARTBEAT) ? 1 : 0);
+void print_fields(const Config& cfg, Print& out) {
+    out.print("display_name=");     out.println(cfg.display_name);
+    out.print("freq_hz=");          out.println(cfg.freq_hz);
+    out.print("bw_hz=");            out.println(cfg.bw_hz);
+    out.print("sf=");               out.println(cfg.sf);
+    out.print("cr=");               out.println(cfg.cr);
+    out.print("txp_dbm=");          out.println(cfg.txp_dbm);
+    out.print("batt_mult=");        out.println(cfg.batt_mult, 4);
+    out.print("tele_interval_ms="); out.println(cfg.tele_interval_ms);
+    out.print("lxmf_interval_ms="); out.println(cfg.lxmf_interval_ms);
+    out.print("telemetry=");        out.println((cfg.flags & CONFIG_FLAG_TELEMETRY)  ? 1 : 0);
+    out.print("lxmf=");             out.println((cfg.flags & CONFIG_FLAG_LXMF)       ? 1 : 0);
+    out.print("heartbeat=");        out.println((cfg.flags & CONFIG_FLAG_HEARTBEAT)  ? 1 : 0);
+    out.print("bt_enabled=");       out.println((cfg.flags & CONFIG_FLAG_BT_ENABLED) ? 1 : 0);
+    out.print("bt_pin=");           out.println(cfg.bt_pin);
+    out.print("latitude=");         out.println(cfg.latitude_udeg  / 1000000.0, 6);
+    out.print("longitude=");        out.println(cfg.longitude_udeg / 1000000.0, 6);
+    out.print("altitude=");         out.println(cfg.altitude_m);
 }
 
 }} // namespace rlr::config

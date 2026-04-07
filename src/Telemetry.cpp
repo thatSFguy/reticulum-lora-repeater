@@ -93,7 +93,7 @@ bool init(const Config& cfg) {
 
 void announce_now(const Config& cfg) {
     if (!s_ready) return;
-    char buf[80];
+    char buf[140];
     int n = snprintf(buf, sizeof(buf),
         "bat=%u;up=%lu;hpf=%u;ro=%u;pin=%lu;pout=%lu",
         (unsigned)rlr::telemetry::read_battery_mv(cfg),
@@ -103,6 +103,15 @@ void announce_now(const Config& cfg) {
         (unsigned long)rlr::transport::packets_in(),
         (unsigned long)rlr::transport::packets_out());
     if (n <= 0) return;
+    // Append location if configured (lat/lon/msl)
+    if (cfg.latitude_udeg != 0 || cfg.longitude_udeg != 0) {
+        int n2 = snprintf(buf + n, sizeof(buf) - n,
+            ";lat=%.6f;lon=%.6f;msl=%ld",
+            cfg.latitude_udeg  / 1000000.0,
+            cfg.longitude_udeg / 1000000.0,
+            (long)cfg.altitude_m);
+        if (n2 > 0) n += n2;
+    }
     Serial.print("Telemetry: ");
     Serial.println(buf);
     try {

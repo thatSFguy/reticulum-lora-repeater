@@ -13,13 +13,14 @@
 // =====================================================================
 
 #include <stdint.h>
+#include <Print.h>
 
 namespace rlr {
 
 #pragma pack(push, 1)
 struct Config {
     // ---- schema ----
-    uint16_t version;               // currently 1
+    uint16_t version;               // 1 = original, 2 = +BT/location
     uint16_t _reserved;
 
     // ---- radio ----
@@ -37,6 +38,14 @@ struct Config {
     uint32_t tele_interval_ms;      // battery telemetry cadence
     uint32_t lxmf_interval_ms;      // LXMF presence cadence
 
+    // ---- bluetooth ----
+    uint32_t bt_pin;                // BLE pairing PIN 0-999999, 0 = no PIN
+
+    // ---- location ----
+    int32_t  latitude_udeg;         // microdegrees (deg * 1e6), 0 = not set
+    int32_t  longitude_udeg;        // microdegrees (deg * 1e6), 0 = not set
+    int32_t  altitude_m;            // meters above mean sea level, 0 = not set
+
     // ---- identity ----
     char     display_name[32];      // NUL-terminated UTF-8
 
@@ -52,6 +61,7 @@ enum : uint8_t {
     CONFIG_FLAG_TELEMETRY  = 1 << 0,
     CONFIG_FLAG_LXMF       = 1 << 1,
     CONFIG_FLAG_HEARTBEAT  = 1 << 2,
+    CONFIG_FLAG_BT_ENABLED = 1 << 3,
 };
 
 namespace config {
@@ -82,7 +92,7 @@ bool validate(const Config& cfg);
 // Set/get helpers for the serial console. They operate on a staging
 // copy; nothing is persisted until save() is called.
 bool set_field(Config& cfg, const char* key, const char* value);
-void print_fields(const Config& cfg);  // writes "key=value" lines to Serial
+void print_fields(const Config& cfg, Print& out);  // writes "key=value" lines to out
 
 } // namespace config
 } // namespace rlr

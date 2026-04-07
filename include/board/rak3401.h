@@ -36,7 +36,7 @@
 #define HAS_BATTERY_SENSE       1
 #define HAS_VEXT_RAIL           1      // POWER_EN on pin 21
 #define HAS_DISPLAY             0
-#define HAS_BLE                 0
+#define HAS_BLE                 1
 #define HAS_PMU                 0
 
 // ---- MCU / SRAM budget --------------------------------------------

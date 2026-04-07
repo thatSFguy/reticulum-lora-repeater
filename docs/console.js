@@ -179,6 +179,67 @@ class RLRConsole {
     return this.parseKV(r.payload);
   }
   async reboot()      { const r = await this.send('REBOOT');     if (!r.ok) throw new Error(r.error); }
+  async announce()    { const r = await this.send('ANNOUNCE');   if (!r.ok) throw new Error(r.error); }
+  async dfu()         { const r = await this.send('DFU');        if (!r.ok) throw new Error(r.error); }
+
+  // ---- Web Bluetooth transport -----------------------------------
+
+  async connectBle() {
+    if (!('bluetooth' in navigator)) throw new Error('Web Bluetooth not supported in this browser');
+    const NUS_SERVICE  = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+    const NUS_RX_CHAR  = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // phone writes to device
+    const NUS_TX_CHAR  = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // device notifies phone
+
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ services: [NUS_SERVICE] }],
+    });
+
+    const server  = await device.gatt.connect();
+    const service = await server.getPrimaryService(NUS_SERVICE);
+    const txChar  = await service.getCharacteristic(NUS_TX_CHAR);
+    const rxChar  = await service.getCharacteristic(NUS_RX_CHAR);
+
+    await txChar.startNotifications();
+    this._bleDevice = device;
+    this._bleRxChar = rxChar;
+
+    // Wire TX notifications into the same _onLine pipeline as serial
+    const decoder = new TextDecoder();
+    txChar.addEventListener('characteristicvaluechanged', (ev) => {
+      const chunk = decoder.decode(ev.target.value, { stream: true });
+      this.lineBuffer += chunk;
+      let idx;
+      while ((idx = this.lineBuffer.search(/[\r\n]/)) >= 0) {
+        const line = this.lineBuffer.slice(0, idx);
+        const sep  = this.lineBuffer[idx];
+        const jump = (sep === '\r' && this.lineBuffer[idx + 1] === '\n') ? 2 : 1;
+        this.lineBuffer = this.lineBuffer.slice(idx + jump);
+        if (line.length > 0) this._onLine(line);
+      }
+    });
+
+    // Replace the writer with a BLE-backed write function
+    this.writer = {
+      write: async (text) => {
+        const enc = new TextEncoder();
+        const data = enc.encode(text);
+        // Chunk into 20-byte MTU segments
+        for (let i = 0; i < data.length; i += 20) {
+          await rxChar.writeValueWithResponse(data.slice(i, Math.min(i + 20, data.length)));
+        }
+      },
+      close: async () => {},
+    };
+
+    // Mark as connected (port is used for isConnected check)
+    this.port = { _ble: true };
+
+    device.addEventListener('gattserverdisconnected', () => {
+      this._teardown().then(() => {
+        if (this.onDisconnect) this.onDisconnect();
+      });
+    });
+  }
 
   // ----------------------------------------------------------------
 
@@ -188,13 +249,18 @@ class RLRConsole {
   }
 
   async _teardown() {
-    // Cancelling the reader causes _readLoop's await to throw, which
-    // unblocks the loop so pipeTo can finish before we close the port.
+    // BLE path: disconnect GATT, clean up device reference
+    if (this._bleDevice) {
+      try { if (this._bleDevice.gatt.connected) this._bleDevice.gatt.disconnect(); } catch (e) {}
+      this._bleDevice = null;
+      this._bleRxChar = null;
+    }
+    // Serial path: cancel reader/writer streams, close port
     try { if (this.reader) await this.reader.cancel(); } catch (e) {}
     try { if (this.readerClosed) await this.readerClosed; } catch (e) {}
     try { if (this.writer) { await this.writer.close(); } } catch (e) {}
     try { if (this.writerClosed) await this.writerClosed; } catch (e) {}
-    try { if (this.port) await this.port.close(); } catch (e) {}
+    try { if (this.port && !this.port._ble) await this.port.close(); } catch (e) {}
     this.port = null;
     this.reader = null;
     this.writer = null;
@@ -219,6 +285,10 @@ class RLRConsole {
   if (!('serial' in navigator)) {
     $('unsupported').classList.remove('hidden');
     $('btn-connect').disabled = true;
+  }
+  if (!('bluetooth' in navigator)) {
+    $('btn-connect-ble').disabled = true;
+    $('ble-unsupported').classList.remove('hidden');
   }
   if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.protocol !== 'file:') {
     $('http-warn').classList.remove('hidden');
@@ -249,6 +319,7 @@ class RLRConsole {
     dot.classList.toggle('err', false);
     txt.textContent = label || (on ? 'Connected' : 'Disconnected');
     btnConnect.classList.toggle('hidden', on);
+    $('btn-connect-ble').classList.toggle('hidden', on);
     btnDisconnect.classList.toggle('hidden', !on);
     liveDiv.classList.toggle('hidden', !on);
   }
@@ -277,6 +348,20 @@ class RLRConsole {
       setConnected(true, 'Connected');
     } catch (e) {
       log('err', 'connect failed: ' + e.message);
+      setConnected(false);
+    }
+  });
+
+  $('btn-connect-ble').addEventListener('click', async () => {
+    try {
+      await con.connectBle();
+      setConnected(true, 'Connecting (BLE)…');
+      log('info', '--- BLE connected ---');
+      await sleep(300);  // BLE needs a bit more settling time
+      await refreshAll();
+      setConnected(true, 'Connected (BLE)');
+    } catch (e) {
+      log('err', 'BLE connect failed: ' + e.message);
       setConnected(false);
     }
   });
@@ -320,6 +405,11 @@ class RLRConsole {
     $('cfg-telemetry').checked      = c.telemetry === '1';
     $('cfg-lxmf').checked           = c.lxmf === '1';
     $('cfg-heartbeat').checked      = c.heartbeat === '1';
+    $('cfg-bt_enabled').checked     = c.bt_enabled === '1';
+    $('cfg-bt_pin').value           = c.bt_pin || '0';
+    $('cfg-latitude').value         = c.latitude || '0.000000';
+    $('cfg-longitude').value        = c.longitude || '0.000000';
+    $('cfg-altitude').value         = c.altitude || '0';
   }
 
   async function refreshAll() {
@@ -361,6 +451,11 @@ class RLRConsole {
       telemetry:        $('cfg-telemetry').checked ? '1' : '0',
       lxmf:             $('cfg-lxmf').checked      ? '1' : '0',
       heartbeat:        $('cfg-heartbeat').checked ? '1' : '0',
+      bt_enabled:       $('cfg-bt_enabled').checked ? '1' : '0',
+      bt_pin:           $('cfg-bt_pin').value || '0',
+      latitude:         $('cfg-latitude').value || '0',
+      longitude:        $('cfg-longitude').value || '0',
+      altitude:         $('cfg-altitude').value || '0',
     };
   }
 
@@ -430,6 +525,15 @@ class RLRConsole {
     }
   });
 
+  $('btn-announce').addEventListener('click', async () => {
+    try {
+      await con.announce();
+      log('ok', 'announce sent');
+    } catch (e) {
+      log('err', 'announce failed: ' + e.message);
+    }
+  });
+
   // ---------------------------------------------------------------
   //  Config export / import
   // ---------------------------------------------------------------
@@ -450,6 +554,11 @@ class RLRConsole {
       telemetry:        $('cfg-telemetry').checked,
       lxmf:             $('cfg-lxmf').checked,
       heartbeat:        $('cfg-heartbeat').checked,
+      bt_enabled:       $('cfg-bt_enabled').checked,
+      bt_pin:           parseInt($('cfg-bt_pin').value) || 0,
+      latitude:         parseFloat($('cfg-latitude').value) || 0,
+      longitude:        parseFloat($('cfg-longitude').value) || 0,
+      altitude:         parseInt($('cfg-altitude').value) || 0,
     };
     const json = JSON.stringify(cfg, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
@@ -486,6 +595,11 @@ class RLRConsole {
       if (cfg.telemetry !== undefined)         $('cfg-telemetry').checked      = !!cfg.telemetry;
       if (cfg.lxmf !== undefined)              $('cfg-lxmf').checked           = !!cfg.lxmf;
       if (cfg.heartbeat !== undefined)         $('cfg-heartbeat').checked      = !!cfg.heartbeat;
+      if (cfg.bt_enabled !== undefined)        $('cfg-bt_enabled').checked     = !!cfg.bt_enabled;
+      if (cfg.bt_pin !== undefined)            $('cfg-bt_pin').value           = cfg.bt_pin;
+      if (cfg.latitude !== undefined)          $('cfg-latitude').value         = cfg.latitude;
+      if (cfg.longitude !== undefined)         $('cfg-longitude').value        = cfg.longitude;
+      if (cfg.altitude !== undefined)          $('cfg-altitude').value         = cfg.altitude;
       log('ok', 'config imported from ' + f.name + ' — edit display_name if needed, then Commit');
     } catch (e) {
       log('err', 'import failed: ' + e.message);

@@ -18,6 +18,7 @@
 #include "Telemetry.h"
 #include "LxmfPresence.h"
 #include "SerialConsole.h"
+#include "Ble.h"
 
 // Compile-time version string so the SerialConsole VERSION command has
 // something to print and so the boot banner is searchable in logs.
@@ -94,6 +95,9 @@ void setup() {
     Serial.print(g_config.txp_dbm);
     Serial.println(" dBm");
 
+    // --- BLE (before radio — available even if radio fails) ---
+    rlr::ble::init(g_config);
+
     // --- Radio + Reticulum transport ---
     // Strict order:
     //   1. init_hardware()  — VEXT + SPI pins + chip reset + sync-word probe
@@ -143,6 +147,7 @@ void loop() {
     rlr::lxmf_presence::tick(g_config);
     rlr::led::heartbeat_tick(g_config);
     rlr::serial_console::tick();
+    rlr::ble::tick();
 
     // Phase 2 bench-test aid: a once-every-10-seconds "alive" marker
     // so a late-attach monitor has unambiguous proof the firmware is

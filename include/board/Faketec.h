@@ -32,7 +32,7 @@
 #define HAS_BATTERY_SENSE       1
 #define HAS_VEXT_RAIL           1      // PIN_VEXT_EN gates radio 3V3
 #define HAS_DISPLAY             0
-#define HAS_BLE                 0      // deliberately disabled in v0.1
+#define HAS_BLE                 1
 #define HAS_PMU                 0
 
 // ---- MCU / SRAM budget --------------------------------------------

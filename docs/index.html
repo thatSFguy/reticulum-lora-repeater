@@ -76,7 +76,7 @@
 
 <header>
   <h1>Reticulum LoRa Repeater
-    <small>Flash firmware and configure your node over USB</small>
+    <small>Flash firmware and configure your node over USB or Bluetooth</small>
   </h1>
 </header>
 
@@ -162,8 +162,12 @@
   </p>
   <div class="row">
     <span id="conn-status"><span class="status-dot" id="conn-dot"></span><span id="conn-text">Disconnected</span></span>
-    <button id="btn-connect">Connect</button>
+    <button id="btn-connect">Connect USB</button>
+    <button id="btn-connect-ble" class="secondary">Connect Bluetooth</button>
     <button id="btn-disconnect" class="secondary hidden">Disconnect</button>
+  </div>
+  <div id="ble-unsupported" class="notice hidden" style="margin-top: 8px;">
+    Web Bluetooth is not available in this browser. Use Chrome on Android, macOS, Linux, or ChromeOS.
   </div>
 </div>
 
@@ -256,8 +260,19 @@
           <label style="display:inline; text-transform:none; font-size:13px; color:var(--text);"><input id="cfg-telemetry" type="checkbox"> telemetry</label>
           <label style="display:inline; text-transform:none; font-size:13px; color:var(--text); margin-left:12px;"><input id="cfg-lxmf" type="checkbox"> lxmf presence</label>
           <label style="display:inline; text-transform:none; font-size:13px; color:var(--text); margin-left:12px;"><input id="cfg-heartbeat" type="checkbox"> heartbeat LED</label>
+          <label style="display:inline; text-transform:none; font-size:13px; color:var(--text); margin-left:12px;"><input id="cfg-bt_enabled" type="checkbox"> bluetooth</label>
         </div>
       </div>
+    </div>
+    <div class="row">
+      <div class="field narrow"><label>BT PIN (0=none)</label>
+        <input id="cfg-bt_pin" type="number" min="0" max="999999" step="1" placeholder="e.g. 123456"></div>
+      <div class="field narrow"><label>latitude</label>
+        <input id="cfg-latitude" type="number" min="-90" max="90" step="0.000001" placeholder="e.g. 37.7749"></div>
+      <div class="field narrow"><label>longitude</label>
+        <input id="cfg-longitude" type="number" min="-180" max="180" step="0.000001" placeholder="e.g. -122.4194"></div>
+      <div class="field narrow"><label>altitude (m MSL)</label>
+        <input id="cfg-altitude" type="number" min="-100000" max="100000" step="1" placeholder="e.g. 50"></div>
     </div>
     <div class="actions">
       <button id="btn-commit">Commit &amp; Reboot</button>
@@ -267,6 +282,7 @@
       <button id="btn-import" class="secondary">Import config</button>
       <input id="cfg-import-file" type="file" accept=".json,application/json" style="display:none;">
       <button id="btn-reboot" class="secondary">Reboot only</button>
+      <button id="btn-announce" class="secondary">Announce</button>
     </div>
   </div>
 

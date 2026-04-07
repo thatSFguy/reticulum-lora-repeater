@@ -25,6 +25,7 @@
 #include "Led.h"
 
 #include <Arduino.h>
+#include <nrf_soc.h>
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -44,8 +45,8 @@ static size_t  s_len      = 0;
 
 // ---- helpers -----------------------------------------------------
 
-static void ok()                        { Serial.println("OK"); }
-static void err(const char* reason)     { Serial.print("ERR: "); Serial.println(reason); }
+static void ok(Print& out)                    { out.println("OK"); }
+static void err(Print& out, const char* reason){ out.print("ERR: "); out.println(reason); }
 
 // Uppercase-in-place for case-insensitive command matching. Only
 // touches ASCII letters; values (e.g. display_name) are matched in a
@@ -74,47 +75,48 @@ static char* split_kv(char* s) {
 
 // ---- command handlers --------------------------------------------
 
-static void cmd_help() {
-    Serial.println("Commands:");
-    Serial.println("  PING                       - liveness check");
-    Serial.println("  VERSION                    - firmware version");
-    Serial.println("  STATUS                     - runtime status");
-    Serial.println("  HELP                       - this help");
-    Serial.println("  REBOOT                     - NVIC system reset");
-    Serial.println("  CONFIG GET                 - print staged config");
-    Serial.println("  CONFIG SET <key> <value>   - stage a field change");
-    Serial.println("  CONFIG RESET               - reseed staging from defaults");
-    Serial.println("  CONFIG REVERT              - reseed staging from live config");
-    Serial.println("  CONFIG COMMIT              - persist staging + reboot");
-    Serial.println("  CALIBRATE BATTERY <mv>     - derive batt_mult from measured voltage");
-    Serial.println("  ANNOUNCE                   - force LXMF + telemetry announce now");
-    ok();
+static void cmd_help(Print& out) {
+    out.println("Commands:");
+    out.println("  PING                       - liveness check");
+    out.println("  VERSION                    - firmware version");
+    out.println("  STATUS                     - runtime status");
+    out.println("  HELP                       - this help");
+    out.println("  REBOOT                     - NVIC system reset");
+    out.println("  DFU                        - reboot into DFU bootloader");
+    out.println("  CONFIG GET                 - print staged config");
+    out.println("  CONFIG SET <key> <value>   - stage a field change");
+    out.println("  CONFIG RESET               - reseed staging from defaults");
+    out.println("  CONFIG REVERT              - reseed staging from live config");
+    out.println("  CONFIG COMMIT              - persist staging + reboot");
+    out.println("  CALIBRATE BATTERY <mv>     - derive batt_mult from measured voltage");
+    out.println("  ANNOUNCE                   - force LXMF + telemetry announce now");
+    ok(out);
 }
 
-static void cmd_version() {
-    Serial.print("version=");
-    Serial.println(RLR_VERSION);
-    ok();
+static void cmd_version(Print& out) {
+    out.print("version=");
+    out.println(RLR_VERSION);
+    ok(out);
 }
 
-static void cmd_status() {
+static void cmd_status(Print& out) {
     uint32_t up_s = millis() / 1000;
-    Serial.print("uptime_s=");  Serial.println(up_s);
-    Serial.print("radio=");     Serial.println(rlr::radio::online() ? "up" : "down");
-    Serial.print("packets_in=");  Serial.println(rlr::transport::packets_in());
-    Serial.print("packets_out="); Serial.println(rlr::transport::packets_out());
-    Serial.print("paths=");       Serial.println(rlr::transport::path_count());
-    Serial.print("destinations="); Serial.println(rlr::transport::destination_count());
+    out.print("uptime_s=");  out.println(up_s);
+    out.print("radio=");     out.println(rlr::radio::online() ? "up" : "down");
+    out.print("packets_in=");  out.println(rlr::transport::packets_in());
+    out.print("packets_out="); out.println(rlr::transport::packets_out());
+    out.print("paths=");       out.println(rlr::transport::path_count());
+    out.print("destinations="); out.println(rlr::transport::destination_count());
     if (s_live) {
-        Serial.print("display_name="); Serial.println(s_live->display_name);
+        out.print("display_name="); out.println(s_live->display_name);
         // Raw + scaled battery readings so the webflasher (or a human)
         // can drive the CALIBRATE BATTERY workflow without guessing.
         uint32_t raw = rlr::telemetry::read_battery_raw_avg();
-        Serial.print("battery_raw="); Serial.println(raw);
-        Serial.print("battery_mv=");  Serial.println(rlr::telemetry::read_battery_mv(*s_live));
-        Serial.print("batt_mult=");   Serial.println(s_live->batt_mult, 4);
+        out.print("battery_raw="); out.println(raw);
+        out.print("battery_mv=");  out.println(rlr::telemetry::read_battery_mv(*s_live));
+        out.print("batt_mult=");   out.println(s_live->batt_mult, 4);
     }
-    ok();
+    ok(out);
 }
 
 // CALIBRATE BATTERY <measured_mv>
@@ -124,77 +126,87 @@ static void cmd_status() {
 // batt_mult = measured_mv / raw_avg, and stages it. The user still
 // runs CONFIG COMMIT to persist — keeps the "nothing touches flash
 // until you ask" invariant consistent with the rest of the console.
-static void cmd_calibrate_battery(char* rest) {
+static void cmd_calibrate_battery(Print& out, char* rest) {
     rest = ltrim(rest);
-    if (*rest == '\0') { err("usage: CALIBRATE BATTERY <measured_mv>"); return; }
+    if (*rest == '\0') { err(out, "usage: CALIBRATE BATTERY <measured_mv>"); return; }
     char* end = nullptr;
     long measured = strtol(rest, &end, 10);
-    if (end == rest || *end != '\0') { err("invalid mv"); return; }
-    if (measured < 500 || measured > 10000) { err("mv out of range (500..10000)"); return; }
+    if (end == rest || *end != '\0') { err(out, "invalid mv"); return; }
+    if (measured < 500 || measured > 10000) { err(out, "mv out of range (500..10000)"); return; }
 
     uint32_t raw = rlr::telemetry::read_battery_raw_avg();
-    if (raw == 0) { err("no battery ADC available or reading is 0"); return; }
+    if (raw == 0) { err(out, "no battery ADC available or reading is 0"); return; }
 
     float mult = (float)measured / (float)raw;
     s_staging.batt_mult = mult;
 
-    Serial.print("battery_raw="); Serial.println(raw);
-    Serial.print("measured_mv="); Serial.println(measured);
-    Serial.print("batt_mult=");   Serial.println(mult, 6);
-    Serial.println("(staged — run CONFIG COMMIT to persist)");
-    ok();
+    out.print("battery_raw="); out.println(raw);
+    out.print("measured_mv="); out.println(measured);
+    out.print("batt_mult=");   out.println(mult, 6);
+    out.println("(staged -- run CONFIG COMMIT to persist)");
+    ok(out);
 }
 
-static void cmd_reboot() {
-    Serial.println("rebooting...");
-    ok();
-    Serial.flush();
+static void cmd_reboot(Print& out) {
+    out.println("rebooting...");
+    ok(out);
+    out.flush();
     delay(50);
     NVIC_SystemReset();
 }
 
-static void cmd_config_get() {
-    config::print_fields(s_staging);
-    ok();
+static void cmd_dfu(Print& out) {
+    out.println("entering DFU mode...");
+    ok(out);
+    out.flush();
+    delay(50);
+    // Adafruit bootloader magic: GPREGRET = 0x57 means "enter DFU on next boot"
+    sd_power_gpregret_set(0, 0x57);
+    NVIC_SystemReset();
 }
 
-static void cmd_config_set(char* rest) {
+static void cmd_config_get(Print& out) {
+    config::print_fields(s_staging, out);
+    ok(out);
+}
+
+static void cmd_config_set(Print& out, char* rest) {
     rest = ltrim(rest);
-    if (*rest == '\0') { err("usage: CONFIG SET <key> <value>"); return; }
+    if (*rest == '\0') { err(out, "usage: CONFIG SET <key> <value>"); return; }
     char* value = split_kv(rest);
     const char* key = rest;
-    if (*value == '\0') { err("missing value"); return; }
+    if (*value == '\0') { err(out, "missing value"); return; }
     if (!config::set_field(s_staging, key, value)) {
-        err("invalid key or value out of range");
+        err(out, "invalid key or value out of range");
         return;
     }
-    ok();
+    ok(out);
 }
 
-static void cmd_config_reset() {
+static void cmd_config_reset(Print& out) {
     config::defaults(s_staging);
-    ok();
+    ok(out);
 }
 
-static void cmd_config_revert() {
-    if (!s_live) { err("no live config"); return; }
+static void cmd_config_revert(Print& out) {
+    if (!s_live) { err(out, "no live config"); return; }
     s_staging = *s_live;
-    ok();
+    ok(out);
 }
 
-static void cmd_config_commit() {
-    if (!config::validate(s_staging)) { err("staging validation failed"); return; }
-    if (!config::save(s_staging))     { err("save failed");               return; }
-    Serial.println("committed, rebooting...");
-    ok();
-    Serial.flush();
+static void cmd_config_commit(Print& out) {
+    if (!config::validate(s_staging)) { err(out, "staging validation failed"); return; }
+    if (!config::save(s_staging))     { err(out, "save failed");               return; }
+    out.println("committed, rebooting...");
+    ok(out);
+    out.flush();
     delay(50);
     NVIC_SystemReset();
 }
 
 // ---- dispatcher --------------------------------------------------
 
-static void dispatch(char* line) {
+static void dispatch(char* line, Print& out) {
     // Strip trailing CR that may come in alongside LF from Windows.
     size_t n = strlen(line);
     while (n > 0 && (line[n-1] == '\r' || line[n-1] == '\n' || line[n-1] == ' ')) {
@@ -213,11 +225,12 @@ static void dispatch(char* line) {
     upper_copy[sizeof(upper_copy) - 1] = '\0';
     upper(upper_copy);
 
-    if (strcmp(upper_copy, "PING") == 0)    { Serial.println("PONG"); ok(); return; }
-    if (strcmp(upper_copy, "VERSION") == 0) { cmd_version(); return; }
-    if (strcmp(upper_copy, "STATUS") == 0)  { cmd_status();  return; }
-    if (strcmp(upper_copy, "HELP") == 0)    { cmd_help();    return; }
-    if (strcmp(upper_copy, "REBOOT") == 0)  { cmd_reboot();  return; }
+    if (strcmp(upper_copy, "PING") == 0)    { out.println("PONG"); ok(out); return; }
+    if (strcmp(upper_copy, "VERSION") == 0) { cmd_version(out); return; }
+    if (strcmp(upper_copy, "STATUS") == 0)  { cmd_status(out);  return; }
+    if (strcmp(upper_copy, "HELP") == 0)    { cmd_help(out);    return; }
+    if (strcmp(upper_copy, "REBOOT") == 0)  { cmd_reboot(out);  return; }
+    if (strcmp(upper_copy, "DFU") == 0)     { cmd_dfu(out);     return; }
 
     // CONFIG subcommands. Match the uppercase prefix, then operate on
     // the original (case-preserving) buffer for any trailing args.
@@ -230,33 +243,27 @@ static void dispatch(char* line) {
         upper_sub[sizeof(upper_sub) - 1] = '\0';
         upper(upper_sub);
 
-        if (strcmp(upper_sub, "GET")    == 0) { cmd_config_get();    return; }
-        if (strcmp(upper_sub, "RESET")  == 0) { cmd_config_reset();  return; }
-        if (strcmp(upper_sub, "REVERT") == 0) { cmd_config_revert(); return; }
-        if (strcmp(upper_sub, "COMMIT") == 0) { cmd_config_commit(); return; }
+        if (strcmp(upper_sub, "GET")    == 0) { cmd_config_get(out);    return; }
+        if (strcmp(upper_sub, "RESET")  == 0) { cmd_config_reset(out);  return; }
+        if (strcmp(upper_sub, "REVERT") == 0) { cmd_config_revert(out); return; }
+        if (strcmp(upper_sub, "COMMIT") == 0) { cmd_config_commit(out); return; }
         if (strncmp(upper_sub, "SET", 3) == 0 &&
             (sub[3] == ' ' || sub[3] == '\t')) {
-            cmd_config_set(sub + 4);
+            cmd_config_set(out, sub + 4);
             return;
         }
-        err("unknown CONFIG subcommand (try HELP)");
+        err(out, "unknown CONFIG subcommand (try HELP)");
         return;
     }
 
     // ANNOUNCE — force immediate LXMF presence + telemetry announce
     if (strcmp(upper_copy, "ANNOUNCE") == 0) {
-        if (!rlr::radio::online()) { err("radio not online"); return; }
-        Serial.println("firing LXMF presence announce...");
+        if (!rlr::radio::online()) { err(out, "radio not online"); return; }
+        out.println("firing LXMF presence announce...");
         rlr::lxmf_presence::announce_now(*s_live);
-        // Note: the telemetry announce may occasionally fail with a
-        // transmit error when fired immediately after LXMF because
-        // the radio is still transitioning from TX→RX. This is
-        // harmless — automatic periodic announces are naturally
-        // spaced and never hit this. We don't add a blocking delay
-        // here because it would stall RX processing and tick().
-        Serial.println("firing telemetry announce...");
+        out.println("firing telemetry announce...");
         rlr::telemetry::announce_now(*s_live);
-        ok();
+        ok(out);
         return;
     }
 
@@ -272,14 +279,14 @@ static void dispatch(char* line) {
 
         if (strncmp(upper_sub, "BATTERY", 7) == 0 &&
             (sub[7] == ' ' || sub[7] == '\t')) {
-            cmd_calibrate_battery(sub + 8);
+            cmd_calibrate_battery(out, sub + 8);
             return;
         }
-        err("unknown CALIBRATE subcommand (try HELP)");
+        err(out, "unknown CALIBRATE subcommand (try HELP)");
         return;
     }
 
-    err("unknown command (try HELP)");
+    err(out, "unknown command (try HELP)");
 }
 
 // ---- public API --------------------------------------------------
@@ -303,7 +310,7 @@ void tick() {
                 // Local echo of the newline so terminals in raw mode
                 // see the break between command and response.
                 Serial.println();
-                dispatch(s_line);
+                dispatch(s_line, Serial);
                 s_len = 0;
             }
             continue;
@@ -327,9 +334,16 @@ void tick() {
             // Overflow: drop the line, tell the user.
             s_len = 0;
             Serial.println();
-            err("line too long");
+            err(Serial, "line too long");
         }
     }
+}
+
+void dispatch_line(const char* line, Print& out) {
+    char buf[sizeof(s_line)];
+    strncpy(buf, line, sizeof(buf));
+    buf[sizeof(buf) - 1] = '\0';
+    dispatch(buf, out);
 }
 
 Config& staging() { return s_staging; }
