@@ -255,14 +255,17 @@ class RLRConsole {
     await txChar.startNotifications();
     this._bleDevice = device;
     this._bleRxChar = rxChar;
+    this._bleTxChar = txChar;
 
-    // Wire TX notifications into the same _onLine pipeline as serial
+    // Wire TX notifications into the same _onLine pipeline as serial.
+    // Store the handler reference so _teardown can remove it.
     const decoder = new TextDecoder();
-    txChar.addEventListener('characteristicvaluechanged', (ev) => {
+    this._bleNotifyHandler = (ev) => {
       const chunk = decoder.decode(ev.target.value, { stream: true });
       this.lineBuffer += chunk;
       this._processLineBuffer();
-    });
+    };
+    txChar.addEventListener('characteristicvaluechanged', this._bleNotifyHandler);
 
     // Replace the writer with a BLE-backed write function
     this.writer = {
@@ -295,12 +298,17 @@ class RLRConsole {
   }
 
   async _teardown() {
-    // BLE path: disconnect GATT, clean up device reference
+    // BLE path: remove notification listener, disconnect GATT
+    if (this._bleTxChar && this._bleNotifyHandler) {
+      try { this._bleTxChar.removeEventListener('characteristicvaluechanged', this._bleNotifyHandler); } catch (e) {}
+    }
     if (this._bleDevice) {
       try { if (this._bleDevice.gatt.connected) this._bleDevice.gatt.disconnect(); } catch (e) {}
-      this._bleDevice = null;
-      this._bleRxChar = null;
     }
+    this._bleDevice = null;
+    this._bleRxChar = null;
+    this._bleTxChar = null;
+    this._bleNotifyHandler = null;
     // Serial path: cancel reader/writer streams, close port
     try { if (this.reader) await this.reader.cancel(); } catch (e) {}
     try { if (this.readerClosed) await this.readerClosed; } catch (e) {}
