@@ -92,7 +92,8 @@ bool validate(const Config& cfg);
 // Set/get helpers for the serial console. They operate on a staging
 // copy; nothing is persisted until save() is called.
 bool set_field(Config& cfg, const char* key, const char* value);
-void print_fields(const Config& cfg, Print& out);  // writes "key=value" lines to out
+void print_fields(const Config& cfg, Print& out);       // writes "key=value" lines to out
+void print_fields_json(const Config& cfg, Print& out);  // writes single-line JSON to out
 
 } // namespace config
 } // namespace rlr

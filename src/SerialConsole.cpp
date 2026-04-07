@@ -170,6 +170,11 @@ static void cmd_config_get(Print& out) {
     ok(out);
 }
 
+static void cmd_config_getjson(Print& out) {
+    config::print_fields_json(s_staging, out);
+    ok(out);
+}
+
 static void cmd_config_set(Print& out, char* rest) {
     rest = ltrim(rest);
     if (*rest == '\0') { err(out, "usage: CONFIG SET <key> <value>"); return; }
@@ -243,8 +248,9 @@ static void dispatch(char* line, Print& out) {
         upper_sub[sizeof(upper_sub) - 1] = '\0';
         upper(upper_sub);
 
-        if (strcmp(upper_sub, "GET")    == 0) { cmd_config_get(out);    return; }
-        if (strcmp(upper_sub, "RESET")  == 0) { cmd_config_reset(out);  return; }
+        if (strcmp(upper_sub, "GET")     == 0) { cmd_config_get(out);     return; }
+        if (strcmp(upper_sub, "GETJSON")== 0) { cmd_config_getjson(out); return; }
+        if (strcmp(upper_sub, "RESET")  == 0) { cmd_config_reset(out);   return; }
         if (strcmp(upper_sub, "REVERT") == 0) { cmd_config_revert(out); return; }
         if (strcmp(upper_sub, "COMMIT") == 0) { cmd_config_commit(out); return; }
         if (strncmp(upper_sub, "SET", 3) == 0 &&

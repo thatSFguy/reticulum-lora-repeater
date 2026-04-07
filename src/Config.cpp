@@ -459,4 +459,46 @@ void print_fields(const Config& cfg, Print& out) {
     out.print("altitude=");         out.println(cfg.altitude_m);
 }
 
+void print_fields_json(const Config& cfg, Print& out) {
+    // Single-line JSON — no newlines until the final println so BLE
+    // transports receive the entire config as one atomic line.
+    char buf[384];
+    int n = snprintf(buf, sizeof(buf),
+        "{\"display_name\":\"%s\","
+        "\"freq_hz\":%lu,"
+        "\"bw_hz\":%lu,"
+        "\"sf\":%u,"
+        "\"cr\":%u,"
+        "\"txp_dbm\":%d,"
+        "\"batt_mult\":%.4f,"
+        "\"tele_interval_ms\":%lu,"
+        "\"lxmf_interval_ms\":%lu,"
+        "\"telemetry\":%d,"
+        "\"lxmf\":%d,"
+        "\"heartbeat\":%d,"
+        "\"bt_enabled\":%d,"
+        "\"bt_pin\":%lu,"
+        "\"latitude\":%.6f,"
+        "\"longitude\":%.6f,"
+        "\"altitude\":%ld}",
+        cfg.display_name,
+        (unsigned long)cfg.freq_hz,
+        (unsigned long)cfg.bw_hz,
+        (unsigned)cfg.sf,
+        (unsigned)cfg.cr,
+        (int)cfg.txp_dbm,
+        (double)cfg.batt_mult,
+        (unsigned long)cfg.tele_interval_ms,
+        (unsigned long)cfg.lxmf_interval_ms,
+        (cfg.flags & CONFIG_FLAG_TELEMETRY)  ? 1 : 0,
+        (cfg.flags & CONFIG_FLAG_LXMF)       ? 1 : 0,
+        (cfg.flags & CONFIG_FLAG_HEARTBEAT)  ? 1 : 0,
+        (cfg.flags & CONFIG_FLAG_BT_ENABLED) ? 1 : 0,
+        (unsigned long)cfg.bt_pin,
+        cfg.latitude_udeg  / 1000000.0,
+        cfg.longitude_udeg / 1000000.0,
+        (long)cfg.altitude_m);
+    if (n > 0) out.println(buf);
+}
+
 }} // namespace rlr::config

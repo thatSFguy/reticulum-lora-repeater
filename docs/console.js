@@ -173,7 +173,20 @@ class RLRConsole {
   async ping()        { const r = await this.send('PING');       if (!r.ok) throw new Error(r.error); }
   async version()     { const r = await this.send('VERSION');    if (!r.ok) throw new Error(r.error); return this.parseKV(r.payload); }
   async status()      { const r = await this.send('STATUS');     if (!r.ok) throw new Error(r.error); return this.parseKV(r.payload); }
-  async configGet()   { const r = await this.send('CONFIG GET'); if (!r.ok) throw new Error(r.error); return this.parseKV(r.payload); }
+  async configGet() {
+    // Prefer GETJSON (single-line JSON, reliable over BLE).
+    // Fall back to line-by-line GET for older firmware.
+    try {
+      const r = await this.send('CONFIG GETJSON');
+      if (r.ok && r.payload.length > 0) {
+        const json = r.payload.join('');
+        return JSON.parse(json);
+      }
+    } catch (e) { /* fall through to legacy */ }
+    const r = await this.send('CONFIG GET');
+    if (!r.ok) throw new Error(r.error);
+    return this.parseKV(r.payload);
+  }
   async configSet(k, v) { const r = await this.send(`CONFIG SET ${k} ${v}`); if (!r.ok) throw new Error(r.error); }
   async configReset() { const r = await this.send('CONFIG RESET');  if (!r.ok) throw new Error(r.error); }
   async configRevert(){ const r = await this.send('CONFIG REVERT'); if (!r.ok) throw new Error(r.error); }
@@ -399,22 +412,24 @@ class RLRConsole {
   async function refreshConfig() {
     const c = await con.configGet();
     originalCfg = { ...c };
+    // Values may be strings (KV mode) or numbers (JSON mode).
+    // Coerce with Number() / String() as needed.
     $('cfg-display_name').value     = c.display_name || '';
-    $('cfg-freq_mhz').value         = c.freq_hz ? (parseInt(c.freq_hz) / 1000000).toFixed(3) : '';
-    $('cfg-bw_hz').value            = c.bw_hz || '';
-    $('cfg-sf').value               = c.sf || '';
-    $('cfg-cr').value               = c.cr || '';
-    $('cfg-txp_dbm').value          = c.txp_dbm || '';
-    $('cfg-tele_interval_min').value = c.tele_interval_ms ? Math.round(parseInt(c.tele_interval_ms) / 60000) : '';
-    $('cfg-lxmf_interval_min').value = c.lxmf_interval_ms ? Math.round(parseInt(c.lxmf_interval_ms) / 60000) : '';
-    $('cfg-telemetry').checked      = c.telemetry === '1';
-    $('cfg-lxmf').checked           = c.lxmf === '1';
-    $('cfg-heartbeat').checked      = c.heartbeat === '1';
-    $('cfg-bt_enabled').checked     = c.bt_enabled === '1';
-    $('cfg-bt_pin').value           = c.bt_pin || '0';
-    $('cfg-latitude').value         = c.latitude || '0.000000';
-    $('cfg-longitude').value        = c.longitude || '0.000000';
-    $('cfg-altitude').value         = c.altitude || '0';
+    $('cfg-freq_mhz').value         = c.freq_hz ? (Number(c.freq_hz) / 1000000).toFixed(3) : '';
+    $('cfg-bw_hz').value            = String(c.bw_hz || '');
+    $('cfg-sf').value               = String(c.sf || '');
+    $('cfg-cr').value               = String(c.cr || '');
+    $('cfg-txp_dbm').value          = String(c.txp_dbm || '');
+    $('cfg-tele_interval_min').value = c.tele_interval_ms ? Math.round(Number(c.tele_interval_ms) / 60000) : '';
+    $('cfg-lxmf_interval_min').value = c.lxmf_interval_ms ? Math.round(Number(c.lxmf_interval_ms) / 60000) : '';
+    $('cfg-telemetry').checked      = Number(c.telemetry) === 1;
+    $('cfg-lxmf').checked           = Number(c.lxmf) === 1;
+    $('cfg-heartbeat').checked      = Number(c.heartbeat) === 1;
+    $('cfg-bt_enabled').checked     = Number(c.bt_enabled) === 1;
+    $('cfg-bt_pin').value           = String(c.bt_pin || '0');
+    $('cfg-latitude').value         = String(c.latitude || '0.000000');
+    $('cfg-longitude').value        = String(c.longitude || '0.000000');
+    $('cfg-altitude').value         = String(c.altitude || '0');
   }
 
   async function refreshAll() {
