@@ -173,12 +173,8 @@
 
 <div id="live" class="hidden">
 
-  <div class="panel">
-    <h2>Status</h2>
-    <dl id="status-kv" class="kv"></dl>
-    <div class="actions">
-      <button id="btn-refresh" class="secondary">Refresh</button>
-    </div>
+  <div id="loading-overlay" class="notice" style="text-align:center;">
+    Loading configuration...
   </div>
 
   <div class="panel">
@@ -282,6 +278,7 @@
       <button id="btn-import" class="secondary">Import config</button>
       <input id="cfg-import-file" type="file" accept=".json,application/json" style="display:none;">
       <button id="btn-reboot" class="secondary">Reboot only</button>
+      <button id="btn-status" class="secondary">Status</button>
       <button id="btn-announce" class="secondary">Announce</button>
     </div>
   </div>

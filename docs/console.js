@@ -118,6 +118,12 @@ class RLRConsole {
     // markers, async log callbacks from the RNS stack, etc.) so the
     // response read starts from a clean slate.
     this._drainAsync();
+    // Over BLE, wait briefly for any in-flight notifications from
+    // a previous command to arrive and get drained.
+    if (this.port && this.port._ble) {
+      await new Promise(r => setTimeout(r, 150));
+      this._drainAsync();
+    }
     this.log('tx', '> ' + cmd);
 
     // Set up the response collector BEFORE writing the command so
@@ -379,18 +385,32 @@ class RLRConsole {
     setConnected(false);
   };
 
+  // All action buttons that should be disabled during loading
+  const actionButtons = ['btn-commit', 'btn-revert', 'btn-reset', 'btn-export',
+    'btn-import', 'btn-reboot', 'btn-status', 'btn-announce', 'btn-calibrate'];
+
+  function setLoading(on) {
+    const overlay = $('loading-overlay');
+    if (overlay) overlay.classList.toggle('hidden', !on);
+    for (const id of actionButtons) {
+      const el = $(id);
+      if (el) el.disabled = on;
+    }
+  }
+
   btnConnect.addEventListener('click', async () => {
     try {
       await con.connect();
       setConnected(true, 'Connecting…');
+      setLoading(true);
       log('info', '--- port opened ---');
-      // A short delay lets the firmware finish any startup bursts and
-      // the alive tick so the first STATUS read is clean.
       await sleep(150);
-      await refreshAll();
+      await refreshConfig();
+      setLoading(false);
       setConnected(true, 'Connected');
     } catch (e) {
       log('err', 'connect failed: ' + e.message);
+      setLoading(false);
       setConnected(false);
     }
   });
@@ -399,12 +419,15 @@ class RLRConsole {
     try {
       await con.connectBle();
       setConnected(true, 'Connecting (BLE)…');
+      setLoading(true);
       log('info', '--- BLE connected ---');
-      await sleep(300);  // BLE needs a bit more settling time
-      await refreshAll();
+      await sleep(500);
+      await refreshConfig();
+      setLoading(false);
       setConnected(true, 'Connected (BLE)');
     } catch (e) {
       log('err', 'BLE connect failed: ' + e.message);
+      setLoading(false);
       setConnected(false);
     }
   });
@@ -415,30 +438,12 @@ class RLRConsole {
     log('info', '--- disconnected ---');
   });
 
-  // Refresh status + config --------------------------------------
-  const statusKV = $('status-kv');
-  async function refreshStatus() {
-    const s = await con.status();
-    statusKV.innerHTML = '';
-    const order = ['display_name', 'uptime_s', 'radio', 'packets_in', 'packets_out', 'paths', 'destinations', 'battery_raw', 'battery_mv', 'batt_mult'];
-    for (const key of order) {
-      if (!(key in s)) continue;
-      const dt = document.createElement('dt'); dt.textContent = key;
-      const dd = document.createElement('dd'); dd.textContent = s[key];
-      statusKV.appendChild(dt); statusKV.appendChild(dd);
-    }
-    // Mirror battery fields into the calibration panel.
-    if ('battery_raw' in s) $('bat-raw').value   = s.battery_raw;
-    if ('battery_mv'  in s) $('bat-mv').value    = s.battery_mv;
-    if ('batt_mult'   in s) $('bat-mult').value  = s.batt_mult;
-  }
+  // Config loading ------------------------------------------------
 
   let originalCfg = {};
   async function refreshConfig() {
     const c = await con.configGet();
     originalCfg = { ...c };
-    // Values may be strings (KV mode) or numbers (JSON mode).
-    // Coerce with Number() / String() as needed.
     $('cfg-display_name').value     = c.display_name || '';
     $('cfg-freq_mhz').value         = c.freq_hz ? (Number(c.freq_hz) / 1000000).toFixed(3) : '';
     $('cfg-bw_hz').value            = String(c.bw_hz || '');
@@ -456,13 +461,6 @@ class RLRConsole {
     $('cfg-longitude').value        = String(c.longitude || '0.000000');
     $('cfg-altitude').value         = String(c.altitude || '0');
   }
-
-  async function refreshAll() {
-    try { await refreshStatus(); } catch (e) { log('err', 'status failed: ' + e.message); }
-    try { await refreshConfig(); } catch (e) { log('err', 'config get failed: ' + e.message); }
-  }
-
-  $('btn-refresh').addEventListener('click', refreshAll);
 
   // Calibration --------------------------------------------------
   $('btn-calibrate').addEventListener('click', async () => {
@@ -617,6 +615,20 @@ class RLRConsole {
       }, 500);
     } catch (e) {
       log('err', 'reboot failed: ' + e.message);
+    }
+  });
+
+  $('btn-status').addEventListener('click', async () => {
+    try {
+      const r = await con.send('STATUS');
+      if (r.ok) {
+        for (const line of r.payload) log('info', line);
+        log('ok', 'status retrieved');
+      } else {
+        log('err', 'status failed: ' + r.error);
+      }
+    } catch (e) {
+      log('err', 'status failed: ' + e.message);
     }
   });
 
