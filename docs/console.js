@@ -176,14 +176,17 @@ class RLRConsole {
   async configGet() {
     // Prefer GETJSON (single-line JSON, reliable over BLE).
     // Fall back to line-by-line GET for older firmware.
+    // Use a longer timeout for BLE since the JSON is ~300 bytes
+    // chunked across many BLE notifications.
+    const timeout = (this.port && this.port._ble) ? 10000 : 5000;
     try {
-      const r = await this.send('CONFIG GETJSON');
+      const r = await this.send('CONFIG GETJSON', timeout);
       if (r.ok && r.payload.length > 0) {
         const json = r.payload.join('');
         return JSON.parse(json);
       }
     } catch (e) { /* fall through to legacy */ }
-    const r = await this.send('CONFIG GET');
+    const r = await this.send('CONFIG GET', timeout);
     if (!r.ok) throw new Error(r.error);
     return this.parseKV(r.payload);
   }

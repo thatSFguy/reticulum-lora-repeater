@@ -460,45 +460,28 @@ void print_fields(const Config& cfg, Print& out) {
 }
 
 void print_fields_json(const Config& cfg, Print& out) {
-    // Single-line JSON — no newlines until the final println so BLE
-    // transports receive the entire config as one atomic line.
-    char buf[384];
-    int n = snprintf(buf, sizeof(buf),
-        "{\"display_name\":\"%s\","
-        "\"freq_hz\":%lu,"
-        "\"bw_hz\":%lu,"
-        "\"sf\":%u,"
-        "\"cr\":%u,"
-        "\"txp_dbm\":%d,"
-        "\"batt_mult\":%.4f,"
-        "\"tele_interval_ms\":%lu,"
-        "\"lxmf_interval_ms\":%lu,"
-        "\"telemetry\":%d,"
-        "\"lxmf\":%d,"
-        "\"heartbeat\":%d,"
-        "\"bt_enabled\":%d,"
-        "\"bt_pin\":%lu,"
-        "\"latitude\":%.6f,"
-        "\"longitude\":%.6f,"
-        "\"altitude\":%ld}",
-        cfg.display_name,
-        (unsigned long)cfg.freq_hz,
-        (unsigned long)cfg.bw_hz,
-        (unsigned)cfg.sf,
-        (unsigned)cfg.cr,
-        (int)cfg.txp_dbm,
-        (double)cfg.batt_mult,
-        (unsigned long)cfg.tele_interval_ms,
-        (unsigned long)cfg.lxmf_interval_ms,
-        (cfg.flags & CONFIG_FLAG_TELEMETRY)  ? 1 : 0,
-        (cfg.flags & CONFIG_FLAG_LXMF)       ? 1 : 0,
-        (cfg.flags & CONFIG_FLAG_HEARTBEAT)  ? 1 : 0,
-        (cfg.flags & CONFIG_FLAG_BT_ENABLED) ? 1 : 0,
-        (unsigned long)cfg.bt_pin,
-        cfg.latitude_udeg  / 1000000.0,
-        cfg.longitude_udeg / 1000000.0,
-        (long)cfg.altitude_m);
-    if (n > 0) out.println(buf);
+    // Write JSON field-by-field using small buffers. Avoids a single
+    // large snprintf that can overflow and plays better with BLE UART's
+    // internal FIFO chunking. No newlines until the final print so the
+    // webapp receives the entire object as one logical line.
+    char b[64];
+    out.print("{\"display_name\":\""); out.print(cfg.display_name); out.print("\"");
+    snprintf(b, sizeof(b), ",\"freq_hz\":%lu",          (unsigned long)cfg.freq_hz);         out.print(b);
+    snprintf(b, sizeof(b), ",\"bw_hz\":%lu",            (unsigned long)cfg.bw_hz);           out.print(b);
+    snprintf(b, sizeof(b), ",\"sf\":%u",                (unsigned)cfg.sf);                   out.print(b);
+    snprintf(b, sizeof(b), ",\"cr\":%u",                (unsigned)cfg.cr);                   out.print(b);
+    snprintf(b, sizeof(b), ",\"txp_dbm\":%d",           (int)cfg.txp_dbm);                  out.print(b);
+    snprintf(b, sizeof(b), ",\"batt_mult\":%.4f",       (double)cfg.batt_mult);              out.print(b);
+    snprintf(b, sizeof(b), ",\"tele_interval_ms\":%lu", (unsigned long)cfg.tele_interval_ms);out.print(b);
+    snprintf(b, sizeof(b), ",\"lxmf_interval_ms\":%lu", (unsigned long)cfg.lxmf_interval_ms);out.print(b);
+    snprintf(b, sizeof(b), ",\"telemetry\":%d",         (cfg.flags & CONFIG_FLAG_TELEMETRY)  ? 1 : 0); out.print(b);
+    snprintf(b, sizeof(b), ",\"lxmf\":%d",              (cfg.flags & CONFIG_FLAG_LXMF)       ? 1 : 0); out.print(b);
+    snprintf(b, sizeof(b), ",\"heartbeat\":%d",         (cfg.flags & CONFIG_FLAG_HEARTBEAT)  ? 1 : 0); out.print(b);
+    snprintf(b, sizeof(b), ",\"bt_enabled\":%d",        (cfg.flags & CONFIG_FLAG_BT_ENABLED) ? 1 : 0); out.print(b);
+    snprintf(b, sizeof(b), ",\"bt_pin\":%lu",           (unsigned long)cfg.bt_pin);          out.print(b);
+    snprintf(b, sizeof(b), ",\"latitude\":%.6f",        cfg.latitude_udeg  / 1000000.0);     out.print(b);
+    snprintf(b, sizeof(b), ",\"longitude\":%.6f",       cfg.longitude_udeg / 1000000.0);     out.print(b);
+    snprintf(b, sizeof(b), ",\"altitude\":%ld}",        (long)cfg.altitude_m);               out.println(b);
 }
 
 }} // namespace rlr::config
