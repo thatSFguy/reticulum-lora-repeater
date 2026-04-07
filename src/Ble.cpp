@@ -57,14 +57,32 @@ static BLECharacteristic s_command_chr(RLR_UUID_COMMAND);
 static BLEUart s_bleuart;
 
 // ---- BlePrint adapter (log stream via NUS TX) --------------------
+// Buffers output line-by-line and flushes on newline or when the
+// buffer fills. Discards writes when BLE is not connected to avoid
+// overflowing the SoftDevice notification queue.
+
+static bool s_connected = false;  // forward declaration for BlePrint
 
 class BlePrint : public Print {
+    uint8_t _buf[64];
+    size_t  _pos = 0;
 public:
     size_t write(uint8_t c) override {
-        return s_bleuart.write(c);
+        if (!s_connected) return 1;
+        _buf[_pos++] = c;
+        if (c == '\n' || _pos >= sizeof(_buf)) flush();
+        return 1;
     }
     size_t write(const uint8_t* buf, size_t len) override {
-        return s_bleuart.write(buf, len);
+        if (!s_connected) return len;
+        for (size_t i = 0; i < len; i++) write(buf[i]);
+        return len;
+    }
+    void flush() override {
+        if (_pos > 0 && s_connected) {
+            s_bleuart.write(_buf, _pos);
+        }
+        _pos = 0;
     }
 };
 
@@ -73,7 +91,7 @@ static BlePrint  s_ble_print;
 // ---- state -------------------------------------------------------
 
 static bool     s_active = false;
-static bool     s_connected = false;
+// s_connected declared above BlePrint (forward ref needed by the class)
 static uint16_t s_conn_handle = BLE_CONN_HANDLE_INVALID;
 static bool     s_require_mitm = false;
 static Config*  s_cfg_ptr = nullptr;  // pointer to live config
@@ -297,6 +315,7 @@ bool init(const Config& cfg) {
 
     s_cfg_ptr = const_cast<Config*>(&cfg);
 
+    Bluefruit.configPrphBandwidth(BANDWIDTH_MAX);  // HVN queue=3, MTU=247
     Bluefruit.begin();
     Bluefruit.setTxPower(4);
 
@@ -376,6 +395,7 @@ bool init(const Config& cfg) {
         s_bleuart.setPermission(sec_read, SECMODE_NO_ACCESS);
     }
     s_bleuart.begin();
+    s_bleuart.bufferTXD(true);  // buffer writes, flush at MTU boundary
 
     _start_advertising();
 
