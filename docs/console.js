@@ -190,19 +190,12 @@ class RLRConsole {
   }
 
   async configGet() {
-    // Prefer GETP (pipe-delimited single line, reliable over BLE).
-    // Fall back to line-by-line GET for older firmware.
     const timeout = (this.port && this.port._ble) ? 10000 : 5000;
-    try {
-      const r = await this.send('CONFIG GETP', timeout);
-      if (r.ok && r.payload.length > 0) {
-        const parsed = this.parsePipe(r.payload.join(''));
-        if (parsed) return parsed;
-      }
-    } catch (e) { /* fall through to legacy */ }
-    const r = await this.send('CONFIG GET', timeout);
-    if (!r.ok) throw new Error(r.error);
-    return this.parseKV(r.payload);
+    const r = await this.send('CONFIG GETP', timeout);
+    if (!r.ok) throw new Error(r.error || 'CONFIG GETP failed');
+    const parsed = this.parsePipe(r.payload.join(''));
+    if (!parsed) throw new Error('failed to parse pipe response: ' + r.payload.join(''));
+    return parsed;
   }
   async configSet(k, v) { const r = await this.send(`CONFIG SET ${k} ${v}`); if (!r.ok) throw new Error(r.error); }
   async configReset() { const r = await this.send('CONFIG RESET');  if (!r.ok) throw new Error(r.error); }
