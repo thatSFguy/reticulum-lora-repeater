@@ -172,6 +172,7 @@ static void cmd_config_get(Print& out) {
 
 static void cmd_config_getp(Print& out) {
     config::print_fields_pipe(s_staging, out);
+    out.println();  // terminate the pipe line
     ok(out);
 }
 

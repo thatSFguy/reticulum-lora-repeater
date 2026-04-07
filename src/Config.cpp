@@ -487,7 +487,8 @@ void print_fields_pipe(const Config& cfg, Print& out) {
     out.print(cfg.bt_pin);             out.print('|');
     out.print(cfg.latitude_udeg  / 1000000.0, 6); out.print('|');
     out.print(cfg.longitude_udeg / 1000000.0, 6); out.print('|');
-    out.println(cfg.altitude_m);
+    out.print(cfg.altitude_m);
+    // No println — caller may append more fields before the line ends.
 }
 
 }} // namespace rlr::config

@@ -177,38 +177,7 @@
     Loading configuration...
   </div>
 
-  <div class="panel">
-    <h2>Battery calibration</h2>
-    <p style="margin: 0 0 12px 0; color: var(--muted); font-size: 13px;">
-      Measure the actual battery (or USB rail) voltage with a multimeter,
-      enter it in millivolts, click Calibrate. The firmware will compute
-      a fresh multiplier from the raw ADC reading and stage it.
-      Commit to persist.
-    </p>
-    <div class="row">
-      <div class="field narrow">
-        <label>raw ADC</label>
-        <input id="bat-raw" type="text" readonly>
-      </div>
-      <div class="field narrow">
-        <label>current mv</label>
-        <input id="bat-mv" type="text" readonly>
-      </div>
-      <div class="field narrow">
-        <label>current mult</label>
-        <input id="bat-mult" type="text" readonly>
-      </div>
-      <div class="field narrow">
-        <label>measured mv</label>
-        <input id="bat-measured" type="number" min="500" max="10000" step="1" placeholder="e.g. 4180">
-      </div>
-      <div>
-        <button id="btn-calibrate">Calibrate</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="panel">
+  <div id="config-panel" class="panel hidden">
     <h2>Configuration</h2>
     <div class="row">
       <div class="field"><label>display name</label>
@@ -269,6 +238,10 @@
         <input id="cfg-longitude" type="number" min="-180" max="180" step="0.000001" placeholder="e.g. -122.4194"></div>
       <div class="field narrow"><label>altitude (m MSL)</label>
         <input id="cfg-altitude" type="number" min="-100000" max="100000" step="1" placeholder="e.g. 50"></div>
+      <div>
+        <label>&nbsp;</label>
+        <button id="btn-geolocate" class="secondary" type="button">Use my location</button>
+      </div>
     </div>
     <div class="actions">
       <button id="btn-commit">Commit &amp; Reboot</button>
@@ -286,6 +259,25 @@
   <div class="panel">
     <h2>Log</h2>
     <div id="log"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Battery calibration</h2>
+    <p style="margin: 0 0 12px 0; color: var(--muted); font-size: 13px;">
+      Measure the actual battery (or USB rail) voltage with a multimeter,
+      enter it below, click Calibrate. The firmware computes a fresh
+      multiplier from the raw ADC reading and stages it. Commit to persist.
+    </p>
+    <div class="row">
+      <div class="field narrow">
+        <label>measured voltage (V)</label>
+        <input id="bat-measured" type="number" min="0.5" max="10" step="0.001" placeholder="e.g. 4.18">
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button id="btn-calibrate">Calibrate</button>
+      </div>
+    </div>
   </div>
 
 </div>

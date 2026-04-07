@@ -161,8 +161,9 @@ class RLRConsole {
   }
 
   _drainAsync() {
-    // Keep unresolved resolvers, drop queued async lines.
+    // Drop queued async lines and any partial data in the line buffer.
     this.lineQueue = [];
+    this.lineBuffer = '';
   }
 
   // Convenience wrappers -------------------------------------------
@@ -371,6 +372,7 @@ class RLRConsole {
     $('btn-connect-ble').classList.toggle('hidden', on);
     btnDisconnect.classList.toggle('hidden', !on);
     liveDiv.classList.toggle('hidden', !on);
+    if (!on) $('config-panel').classList.add('hidden');
   }
 
   // Stream unsolicited firmware output (alive markers, Radio: RX
@@ -460,24 +462,50 @@ class RLRConsole {
     $('cfg-latitude').value         = String(c.latitude || '0.000000');
     $('cfg-longitude').value        = String(c.longitude || '0.000000');
     $('cfg-altitude').value         = String(c.altitude || '0');
+    // No battery fields to populate — calibration panel is self-contained.
+    // Show config panel now that data is loaded
+    $('config-panel').classList.remove('hidden');
   }
 
   // Calibration --------------------------------------------------
   $('btn-calibrate').addEventListener('click', async () => {
-    const mv = parseInt($('bat-measured').value, 10);
-    if (!Number.isFinite(mv) || mv < 500 || mv > 10000) {
-      log('err', 'enter a measured voltage in mV (500..10000)');
+    const volts = parseFloat($('bat-measured').value);
+    if (!Number.isFinite(volts) || volts < 0.5 || volts > 10) {
+      log('err', 'enter a measured voltage in volts (0.5..10)');
       return;
     }
+    const mv = Math.round(volts * 1000);
     try {
       const result = await con.calibrateBattery(mv);
       log('ok', `staged batt_mult=${result.batt_mult} (commit to persist)`);
-      // Reload the config form so the new multiplier is visible and
-      // will be included in the next commit.
       await refreshConfig();
     } catch (e) {
       log('err', 'calibrate failed: ' + e.message);
     }
+  });
+
+  // Geolocation ---------------------------------------------------
+  $('btn-geolocate').addEventListener('click', () => {
+    if (!('geolocation' in navigator)) {
+      log('err', 'Geolocation not available in this browser');
+      return;
+    }
+    log('info', 'Requesting location...');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        $('cfg-latitude').value  = pos.coords.latitude.toFixed(6);
+        $('cfg-longitude').value = pos.coords.longitude.toFixed(6);
+        if (pos.coords.altitude !== null) {
+          $('cfg-altitude').value = Math.round(pos.coords.altitude);
+        }
+        log('ok', `location: ${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}` +
+            (pos.coords.altitude !== null ? `, ${Math.round(pos.coords.altitude)}m MSL` : ' (no altitude)'));
+      },
+      (err) => {
+        log('err', 'Location failed: ' + err.message);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
   });
 
   // Config commit ------------------------------------------------
