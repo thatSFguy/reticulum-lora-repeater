@@ -7,6 +7,7 @@
 // include/board/<name>.h file — nothing in this driver changes.
 
 #include "Radio.h"
+#include "Ble.h"
 #include <Arduino.h>
 #include <SPI.h>
 #include <RadioLib.h>
@@ -280,9 +281,14 @@ int transmit(const uint8_t* buf, size_t len) {
     // and causes supervision timeout disconnects (reason=0x08).
     int state = s_radio.startTransmit(tx_buf, len + 1);
     if (state == RADIOLIB_ERR_NONE) {
-        // Poll DIO1 for TX_DONE, yielding to FreeRTOS/SoftDevice
-        while (digitalRead(PIN_LORA_DIO1) == LOW) {
-            delay(1);  // yield to SoftDevice BLE event processing
+        // Poll DIO1 for TX_DONE. Yield during poll only when BLE is
+        // active — otherwise tight-loop for fastest RX turnaround.
+        if (rlr::ble::active()) {
+            while (digitalRead(PIN_LORA_DIO1) == LOW) {
+                delay(1);  // yield to SoftDevice BLE event processing
+            }
+        } else {
+            while (digitalRead(PIN_LORA_DIO1) == LOW) { /* busy-wait */ }
         }
         // Clear IRQ flags on the radio
         s_radio.finishTransmit();
