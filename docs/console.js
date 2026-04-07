@@ -121,12 +121,6 @@ class RLRConsole {
     // markers, async log callbacks from the RNS stack, etc.) so the
     // response read starts from a clean slate.
     this._drainAsync();
-    // Over BLE, wait briefly for any in-flight notifications from
-    // a previous command to arrive and get drained.
-    if (this.port && this.port._ble) {
-      await new Promise(r => setTimeout(r, 150));
-      this._drainAsync();
-    }
     this.log('tx', '> ' + cmd);
 
     // Set up the response collector BEFORE writing the command so
@@ -200,8 +194,11 @@ class RLRConsole {
   }
 
   async configGet() {
-    const timeout = (this.port && this.port._ble) ? 10000 : 5000;
-    const r = await this.send('CONFIG GETP', timeout);
+    // BLE: atomic GATT read. Serial: text command.
+    if (this.port && this.port._ble) {
+      return await this.bleConfigRead();
+    }
+    const r = await this.send('CONFIG GETP');
     if (!r.ok) throw new Error(r.error || 'CONFIG GETP failed');
     const parsed = this.parsePipe(r.payload.join(''));
     if (!parsed) throw new Error('failed to parse pipe response: ' + r.payload.join(''));
@@ -222,65 +219,71 @@ class RLRConsole {
 
   // ---- Web Bluetooth transport -----------------------------------
 
+  // Custom RLR Service UUIDs (must match firmware Ble.cpp)
+  static get RLR_SERVICE()    { return '6c720001-0000-7272-4c52-a5a500000000'; }
+  static get RLR_CONFIG_CHR() { return '6c720002-0000-7272-4c52-a5a500000000'; }
+  static get RLR_COMMIT_CHR() { return '6c720003-0000-7272-4c52-a5a500000000'; }
+  static get RLR_CMD_CHR()    { return '6c720004-0000-7272-4c52-a5a500000000'; }
+  // NUS for log stream
+  static get NUS_SERVICE()    { return '6e400001-b5a3-f393-e0a9-e50e24dcca9e'; }
+  static get NUS_TX_CHAR()    { return '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; }
+
   async connectBle() {
     if (!('bluetooth' in navigator)) throw new Error('Web Bluetooth not supported in this browser');
-    const NUS_SERVICE  = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
-    const NUS_RX_CHAR  = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // phone writes to device
-    const NUS_TX_CHAR  = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // device notifies phone
 
     const device = await navigator.bluetooth.requestDevice({
-      filters: [{ services: [NUS_SERVICE] }],
+      filters: [{ services: [RLRConsole.RLR_SERVICE] }],
+      optionalServices: [RLRConsole.NUS_SERVICE],
     });
 
-    // Connect with retry — GATT can disconnect during service discovery
-    // if pairing/bonding needs to settle. Give it up to 3 attempts.
-    let server, service, txChar, rxChar;
+    // Connect with retry
+    let server;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        server  = await device.gatt.connect();
-        // Small delay after GATT connect to let pairing/encryption settle
+        server = await device.gatt.connect();
         await new Promise(r => setTimeout(r, 500));
         if (!server.connected) throw new Error('GATT disconnected during pairing');
-        service = await server.getPrimaryService(NUS_SERVICE);
-        txChar  = await service.getCharacteristic(NUS_TX_CHAR);
-        rxChar  = await service.getCharacteristic(NUS_RX_CHAR);
         break;
       } catch (e) {
         if (attempt === 3) throw e;
-        this.log && this.log('info', `BLE connect attempt ${attempt} failed: ${e.message}, retrying...`);
+        this.log && this.log('info', `BLE attempt ${attempt} failed: ${e.message}, retrying...`);
         await new Promise(r => setTimeout(r, 1000));
       }
     }
 
-    await txChar.startNotifications();
-    this._bleDevice = device;
-    this._bleRxChar = rxChar;
-    this._bleTxChar = txChar;
+    // Discover custom RLR service
+    const rlrService = await server.getPrimaryService(RLRConsole.RLR_SERVICE);
+    this._bleConfigChr = await rlrService.getCharacteristic(RLRConsole.RLR_CONFIG_CHR);
+    this._bleCommitChr = await rlrService.getCharacteristic(RLRConsole.RLR_COMMIT_CHR);
+    this._bleCmdChr    = await rlrService.getCharacteristic(RLRConsole.RLR_CMD_CHR);
 
-    // Wire TX notifications into the same _onLine pipeline as serial.
-    // Store the handler reference so _teardown can remove it.
-    const decoder = new TextDecoder();
-    this._bleNotifyHandler = (ev) => {
-      const chunk = decoder.decode(ev.target.value, { stream: true });
-      this.lineBuffer += chunk;
-      this._processLineBuffer();
-    };
-    txChar.addEventListener('characteristicvaluechanged', this._bleNotifyHandler);
+    // Discover NUS for log stream (optional — may not be available)
+    try {
+      const nusService = await server.getPrimaryService(RLRConsole.NUS_SERVICE);
+      const nusTx = await nusService.getCharacteristic(RLRConsole.NUS_TX_CHAR);
+      await nusTx.startNotifications();
+      this._bleTxChar = nusTx;
+      const decoder = new TextDecoder();
+      this._bleNotifyHandler = (ev) => {
+        const chunk = decoder.decode(ev.target.value, { stream: true });
+        this.lineBuffer += chunk;
+        this._processLineBuffer();
+      };
+      nusTx.addEventListener('characteristicvaluechanged', this._bleNotifyHandler);
+    } catch (e) {
+      this.log && this.log('info', 'NUS log stream not available: ' + e.message);
+    }
 
-    // Replace the writer with a BLE-backed write function
+    // Set up a dummy writer for send() compatibility (commands use _bleCmdChr)
     this.writer = {
       write: async (text) => {
         const enc = new TextEncoder();
-        const data = enc.encode(text);
-        // Chunk into 20-byte MTU segments
-        for (let i = 0; i < data.length; i += 20) {
-          await rxChar.writeValueWithResponse(data.slice(i, Math.min(i + 20, data.length)));
-        }
+        await this._bleCmdChr.writeValueWithResponse(enc.encode(text));
       },
       close: async () => {},
     };
 
-    // Mark as connected (port is used for isConnected check)
+    this._bleDevice = device;
     this.port = { _ble: true };
 
     device.addEventListener('gattserverdisconnected', () => {
@@ -288,6 +291,36 @@ class RLRConsole {
         if (this.onDisconnect) this.onDisconnect();
       });
     });
+  }
+
+  // Read config atomically via GATT characteristic (no line parsing)
+  async bleConfigRead() {
+    if (!this._bleConfigChr) throw new Error('not connected via BLE');
+    const value = await this._bleConfigChr.readValue();
+    const text = new TextDecoder().decode(value);
+    const parsed = this.parsePipe(text);
+    if (!parsed) throw new Error('failed to parse config: ' + text);
+    return parsed;
+  }
+
+  // Write config atomically via GATT characteristic
+  async bleConfigWrite(pipeString) {
+    if (!this._bleConfigChr) throw new Error('not connected via BLE');
+    const enc = new TextEncoder();
+    await this._bleConfigChr.writeValueWithResponse(enc.encode(pipeString));
+  }
+
+  // Commit config via GATT characteristic (0x01 = save + reboot)
+  async bleCommit() {
+    if (!this._bleCommitChr) throw new Error('not connected via BLE');
+    await this._bleCommitChr.writeValueWithResponse(new Uint8Array([0x01]));
+  }
+
+  // Send a command via GATT command characteristic
+  async bleCommand(cmd) {
+    if (!this._bleCmdChr) throw new Error('not connected via BLE');
+    const enc = new TextEncoder();
+    await this._bleCmdChr.writeValueWithResponse(enc.encode(cmd));
   }
 
   // ----------------------------------------------------------------
@@ -306,9 +339,11 @@ class RLRConsole {
       try { if (this._bleDevice.gatt.connected) this._bleDevice.gatt.disconnect(); } catch (e) {}
     }
     this._bleDevice = null;
-    this._bleRxChar = null;
     this._bleTxChar = null;
     this._bleNotifyHandler = null;
+    this._bleConfigChr = null;
+    this._bleCommitChr = null;
+    this._bleCmdChr = null;
     // Serial path: cancel reader/writer streams, close port
     try { if (this.reader) await this.reader.cancel(); } catch (e) {}
     try { if (this.readerClosed) await this.readerClosed; } catch (e) {}
@@ -427,11 +462,6 @@ class RLRConsole {
       setConnected(true, 'Connecting (BLE)…');
       setLoading(true);
       log('info', '--- BLE connected ---');
-      await sleep(500);
-      // PING flushes any unsolicited firmware output (connection
-      // messages, alive markers) so GETP starts from a clean state.
-      try { await con.ping(); } catch (e) {}
-      await sleep(200);
       await refreshConfig();
       setLoading(false);
       setConnected(true, 'Connected (BLE)');
@@ -583,6 +613,12 @@ class RLRConsole {
     return errs;
   }
 
+  // Build pipe string from form values (matches firmware field order)
+  function buildPipeString(vals) {
+    const fields = RLRConsole.PIPE_FIELDS;
+    return fields.map(f => String(vals[f] || '')).join('|');
+  }
+
   $('btn-commit').addEventListener('click', async () => {
     const validationErrors = validateForm();
     if (validationErrors.length > 0) {
@@ -590,23 +626,30 @@ class RLRConsole {
       return;
     }
     const vals = formValues();
-    // Only push fields that actually changed — quieter log, fewer
-    // round-trips, and it plays nicely with firmware-managed fields
-    // like batt_mult that the user edited via CALIBRATE BATTERY.
-    const changes = [];
-    for (const [k, v] of Object.entries(vals)) {
-      if (String(originalCfg[k]) !== String(v)) changes.push([k, v]);
-    }
-    if (changes.length === 0) {
-      log('info', 'no form changes — committing in case CALIBRATE was staged');
-    } else {
-      log('info', `applying ${changes.length} change(s)`);
-    }
     try {
-      for (const [k, v] of changes) {
-        await con.configSet(k, v);
+      const isBle = con.port && con.port._ble;
+      if (isBle) {
+        // BLE: write full config as pipe string, then commit
+        const pipe = buildPipeString(vals);
+        log('info', 'writing config via BLE...');
+        await con.bleConfigWrite(pipe);
+        await con.bleCommit();
+      } else {
+        // Serial: push changed fields individually
+        const changes = [];
+        for (const [k, v] of Object.entries(vals)) {
+          if (String(originalCfg[k]) !== String(v)) changes.push([k, v]);
+        }
+        if (changes.length === 0) {
+          log('info', 'no form changes — committing in case CALIBRATE was staged');
+        } else {
+          log('info', `applying ${changes.length} change(s)`);
+        }
+        for (const [k, v] of changes) {
+          await con.configSet(k, v);
+        }
+        await con.configCommit();
       }
-      await con.configCommit();
       log('ok', '--- committed, device rebooting ---');
       // The device NVIC-resets right after it prints OK; the serial
       // port will drop within a few hundred ms. Tear down the local
@@ -656,12 +699,17 @@ class RLRConsole {
 
   $('btn-status').addEventListener('click', async () => {
     try {
-      const r = await con.send('STATUS');
-      if (r.ok) {
-        for (const line of r.payload) log('info', line);
-        log('ok', 'status retrieved');
+      if (con.port && con.port._ble) {
+        await con.bleCommand('STATUS');
+        log('ok', 'status requested (see log stream)');
       } else {
-        log('err', 'status failed: ' + r.error);
+        const r = await con.send('STATUS');
+        if (r.ok) {
+          for (const line of r.payload) log('info', line);
+          log('ok', 'status retrieved');
+        } else {
+          log('err', 'status failed: ' + r.error);
+        }
       }
     } catch (e) {
       log('err', 'status failed: ' + e.message);
@@ -670,8 +718,13 @@ class RLRConsole {
 
   $('btn-announce').addEventListener('click', async () => {
     try {
-      await con.announce();
-      log('ok', 'announce sent');
+      if (con.port && con.port._ble) {
+        await con.bleCommand('ANNOUNCE');
+        log('ok', 'announce requested');
+      } else {
+        await con.announce();
+        log('ok', 'announce sent');
+      }
     } catch (e) {
       log('err', 'announce failed: ' + e.message);
     }
