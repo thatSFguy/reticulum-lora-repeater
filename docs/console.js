@@ -57,15 +57,7 @@ class RLRConsole {
         if (done) break;
         if (!value) continue;
         this.lineBuffer += value;
-        // Split on \r and \n; treat \r\n, \r, or \n all as one break.
-        let idx;
-        while ((idx = this.lineBuffer.search(/[\r\n]/)) >= 0) {
-          const line = this.lineBuffer.slice(0, idx);
-          const sep  = this.lineBuffer[idx];
-          const jump = (sep === '\r' && this.lineBuffer[idx + 1] === '\n') ? 2 : 1;
-          this.lineBuffer = this.lineBuffer.slice(idx + jump);
-          if (line.length > 0) this._onLine(line);
-        }
+        this._processLineBuffer();
       }
     } catch (e) {
       // The reader throws when we cancel it in disconnect() — that's
@@ -78,6 +70,17 @@ class RLRConsole {
         const cb = this.onDisconnect;
         this._teardown().then(() => { if (cb) cb(); });
       }
+    }
+  }
+
+  _processLineBuffer() {
+    let idx;
+    while ((idx = this.lineBuffer.search(/[\r\n]/)) >= 0) {
+      const line = this.lineBuffer.slice(0, idx);
+      const sep  = this.lineBuffer[idx];
+      const jump = (sep === '\r' && this.lineBuffer[idx + 1] === '\n') ? 2 : 1;
+      this.lineBuffer = this.lineBuffer.slice(idx + jump);
+      if (line.length > 0) this._onLine(line);
     }
   }
 
@@ -258,14 +261,7 @@ class RLRConsole {
     txChar.addEventListener('characteristicvaluechanged', (ev) => {
       const chunk = decoder.decode(ev.target.value, { stream: true });
       this.lineBuffer += chunk;
-      let idx;
-      while ((idx = this.lineBuffer.search(/[\r\n]/)) >= 0) {
-        const line = this.lineBuffer.slice(0, idx);
-        const sep  = this.lineBuffer[idx];
-        const jump = (sep === '\r' && this.lineBuffer[idx + 1] === '\n') ? 2 : 1;
-        this.lineBuffer = this.lineBuffer.slice(idx + jump);
-        if (line.length > 0) this._onLine(line);
-      }
+      this._processLineBuffer();
     });
 
     // Replace the writer with a BLE-backed write function
