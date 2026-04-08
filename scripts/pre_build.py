@@ -462,11 +462,117 @@ def patch_bluefruit_ble_shim(env):
     print("pre_build: created Bluefruit ble.h shim -> %s" % sd_api_dir)
 
 
+# ---------------------------------------------------------------
+#  Job 4 — DATA packet forwarding for transport nodes
+#
+#  microReticulum's Transport::inbound() handles ANNOUNCE rebroadcast
+#  correctly but drops DATA packets that aren't for a local destination.
+#  Upstream Python Reticulum forwards these packets when transport is
+#  enabled. For a single-interface repeater, we just rebroadcast the
+#  raw packet with an incremented hop count.
+#
+#  This patch adds forwarding logic to the "Local destination not found"
+#  branch in the DATA handling section of Transport.cpp.
+# ---------------------------------------------------------------
+
+DATA_FWD_MARKER = "// RLR_DATA_FORWARD_PATCH"
+
+DATA_FWD_ORIGINAL = '\t\t\t\telse {\n\t\t\t\t\tDEBUGF("Transport::inbound: Local destination %s not found, not handling packet locally", packet.destination_hash().toHex().c_str());\n\t\t\t\t}'
+
+DATA_FWD_PATCHED = """\t\t\t\telse {
+\t\t\t\t\t""" + DATA_FWD_MARKER + """
+\t\t\t\t\tDEBUGF("Transport::inbound: Local destination %s not found, not handling packet locally", packet.destination_hash().toHex().c_str());
+\t\t\t\t\t// Forward DATA packets when transport is enabled (repeater mode).
+\t\t\t\t\t// Rebroadcast with updated hop count on all interfaces.
+\t\t\t\t\tif (Reticulum::transport_enabled() && packet.hops() < Type::Transport::PATHFINDER_M) {
+\t\t\t\t\t\tBytes new_raw(packet.raw().size());
+\t\t\t\t\t\tnew_raw << packet.raw().left(1);      // flags byte
+\t\t\t\t\t\tnew_raw << packet.hops();              // updated hop count
+\t\t\t\t\t\tnew_raw << packet.raw().mid(2);         // rest of packet unchanged
+\t\t\t\t\t\tfor (auto& [hash, iface] : _interfaces) {
+\t\t\t\t\t\t\tDEBUGF("Transport::inbound: Forwarding DATA packet for %s on %s (hops=%d)", packet.destination_hash().toHex().c_str(), iface.toString().c_str(), packet.hops());
+\t\t\t\t\t\t\ttransmit(iface, new_raw);
+\t\t\t\t\t\t}
+\t\t\t\t\t}
+\t\t\t\t}"""
+
+# Also patch PROOF forwarding — when transport is enabled and proof
+# is not in reverse_table, rebroadcast it so proofs can traverse
+# the repeater back to the sender.
+PROOF_FWD_MARKER = "// RLR_PROOF_FORWARD_PATCH"
+
+PROOF_FWD_ORIGINAL = '\t\t\t\t\tTRACE("Proof is not candidate for transporting");'
+
+PROOF_FWD_PATCHED = """\t\t\t\t\t""" + PROOF_FWD_MARKER + """
+\t\t\t\t\t// Forward PROOFs when transport is enabled (repeater mode).
+\t\t\t\t\tif (Reticulum::transport_enabled() && packet.hops() < Type::Transport::PATHFINDER_M) {
+\t\t\t\t\t\tBytes new_raw(packet.raw().size());
+\t\t\t\t\t\tnew_raw << packet.raw().left(1);
+\t\t\t\t\t\tnew_raw << packet.hops();
+\t\t\t\t\t\tnew_raw << packet.raw().mid(2);
+\t\t\t\t\t\tfor (auto& [hash, iface] : _interfaces) {
+\t\t\t\t\t\t\tDEBUGF("Transport::inbound: Forwarding PROOF on %s (hops=%d)", iface.toString().c_str(), packet.hops());
+\t\t\t\t\t\t\ttransmit(iface, new_raw);
+\t\t\t\t\t\t}
+\t\t\t\t\t}
+\t\t\t\t\telse {
+\t\t\t\t\t\tTRACE("Proof is not candidate for transporting");
+\t\t\t\t\t}"""
+
+
+def patch_data_forwarding(env):
+    project_dir = env["PROJECT_DIR"]
+    env_name    = env["PIOENV"]
+    target = os.path.join(
+        project_dir, ".pio", "libdeps", env_name,
+        "microReticulum", "src", "Transport.cpp",
+    )
+    if not os.path.exists(target):
+        print("pre_build: microReticulum not yet fetched — data forwarding patch skipped")
+        return
+
+    with open(target, "r", encoding="utf-8", newline="") as f:
+        source = f.read()
+    source = source.replace("\r\n", "\n")
+
+    applied = False
+
+    # Patch 1: DATA forwarding
+    if DATA_FWD_MARKER in source:
+        print("pre_build: DATA forwarding patch already applied")
+    elif DATA_FWD_ORIGINAL not in source:
+        raise RuntimeError(
+            "pre_build: could not locate DATA handling block in Transport.cpp "
+            "for data forwarding patch. The upstream source may have changed."
+        )
+    else:
+        source = source.replace(DATA_FWD_ORIGINAL, DATA_FWD_PATCHED, 1)
+        assert DATA_FWD_MARKER in source
+        print("pre_build: applied DATA forwarding patch")
+        applied = True
+
+    # Patch 2: PROOF forwarding
+    if PROOF_FWD_MARKER in source:
+        print("pre_build: PROOF forwarding patch already applied")
+    elif PROOF_FWD_ORIGINAL not in source:
+        print("pre_build: PROOF forwarding target not found (may have changed upstream)")
+    else:
+        source = source.replace(PROOF_FWD_ORIGINAL, PROOF_FWD_PATCHED, 1)
+        assert PROOF_FWD_MARKER in source
+        print("pre_build: applied PROOF forwarding patch")
+        applied = True
+
+    if applied:
+        with open(target, "w", encoding="utf-8", newline="") as f:
+            f.write(source)
+
+
 patch_bluefruit_ble_shim(env)     # noqa: F821
 patch_microreticulum(env)         # noqa: F821
 patch_identity_hash(env)          # noqa: F821
 patch_validate_announce_diag(env) # noqa: F821
 patch_announce_diag(env)          # noqa: F821
+patch_data_forwarding(env)        # noqa: F821
 
 
 # ---------------------------------------------------------------
