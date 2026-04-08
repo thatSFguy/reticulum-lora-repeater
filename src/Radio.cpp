@@ -278,6 +278,10 @@ int transmit(const uint8_t* buf, size_t len) {
     // paused in the main loop when BLE is connected, so this
     // blocking call won't starve the SoftDevice.
     int state = s_radio.transmit(tx_buf, len + 1);
+    if (state != RADIOLIB_ERR_NONE) {
+        Serial.print("Radio: TX error code=");
+        Serial.println(state);
+    }
     s_radio.startReceive();
     // Clear the ISR flag AFTER re-entering RX. The SX1262's DIO1
     // line can glitch during the TX→Standby→RX transition, causing
