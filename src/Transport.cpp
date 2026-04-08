@@ -47,7 +47,7 @@ public:
     LoRaInterface() : RNS::InterfaceImpl("LoRaInterface") {
         _IN  = true;
         _OUT = true;
-        _HW_MTU = 508;
+        _HW_MTU = 508;  // RNode MTU — packets > 254 bytes are split into two LoRa frames
     }
     ~LoRaInterface() override { _name = "deleted"; }
 
@@ -67,10 +67,10 @@ protected:
 
     void send_outgoing(const RNS::Bytes& data) override {
         try {
-            if (data.size() > 255) {
+            if (data.size() > 508) {
                 Serial.print("LoRaInterface::send_outgoing: DROPPED oversized packet (");
                 Serial.print(data.size());
-                Serial.println(" bytes > 255)");
+                Serial.println(" bytes > 508)");
                 RNS::InterfaceImpl::handle_outgoing(data);
                 return;
             }

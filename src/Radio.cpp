@@ -32,6 +32,19 @@ static SX1262 s_radio(&s_module);
 
 static bool s_online = false;
 
+// ---- RNode split-packet reassembly state --------------------------
+// RNode splits packets > 254 bytes into two LoRa frames with the
+// same header byte (upper nibble = sequence, lower bit 0 = FLAG_SPLIT).
+// We buffer the first half and join when the second half arrives.
+static constexpr uint8_t FLAG_SPLIT = 0x01;
+static constexpr size_t  SINGLE_MTU = 255;   // max LoRa frame (header + 254 payload)
+static constexpr size_t  MAX_PAYLOAD = 508;   // max reassembled Reticulum payload
+
+static uint8_t  s_split_buf[512];    // buffered first-half payload (no header)
+static size_t   s_split_len = 0;     // bytes in split_buf
+static uint8_t  s_split_seq = 0xFF;  // sequence nibble of first half (0xFF = none)
+static uint32_t s_split_ms  = 0;     // millis() when first half arrived
+
 // ISR flag set by RadioLib's packet-received callback. Volatile
 // because it's written from interrupt context and read from loop().
 // RadioLib's setPacketReceivedAction wires the SX1262's RX_DONE
@@ -173,68 +186,45 @@ void stop() {
 }
 
 int read_pending(uint8_t* buf, size_t bufsize) {
+    // Expire stale split-packet first half (500ms timeout)
+    if (s_split_seq != 0xFF && (millis() - s_split_ms) > 500) {
+        Serial.println("Radio: split timeout, discarding first half");
+        s_split_seq = 0xFF;
+        s_split_len = 0;
+    }
+
     if (!s_rx_flag) return 0;
     s_rx_flag = false;
 
     size_t len = s_radio.getPacketLength();
     if (len == 0) {
-        // len=0 is normal after our own TX: the SX1262's DIO1 can
-        // fire a spurious RX_DONE during the TX→RX transition, and
-        // the flag clear in transmit() didn't catch it (race). Not
-        // a real packet — silently re-enter RX and return.
         s_radio.startReceive();
         return 0;
     }
-    if (len > bufsize) {
-        // Genuinely oversized — log it as a real error, it might be
-        // a sign of marginal reception or RX pipeline corruption.
+
+    // Read the raw LoRa frame
+    uint8_t rx_tmp[512];
+    if (len > sizeof(rx_tmp)) {
         Serial.print("Radio: RX oversize len=");
         Serial.println(len);
-        int sr = s_radio.startReceive();
-        if (sr != RADIOLIB_ERR_NONE) {
-            Serial.print("Radio: startReceive() failed after oversize, code ");
-            Serial.println(sr);
-        }
+        s_radio.startReceive();
         return -1;
     }
-    // Read into a temporary buffer so we can strip the RNode header
-    uint8_t rx_tmp[512];
-    if (len > sizeof(rx_tmp)) len = sizeof(rx_tmp);
     int state = s_radio.readData(rx_tmp, len);
-
     float rssi = s_radio.getRSSI();
     float snr  = s_radio.getSNR();
 
-    // RNode-compatible framing: strip the 1-byte RNode header that
-    // every RNode prepends to LoRa frames. The header byte is:
-    //   upper nibble = random sequence, lower nibble = flags
-    // We discard it and pass only the Reticulum payload to the caller.
-    // If the packet came from another node running our firmware (which
-    // now also prepends this header), the strip is symmetric.
-    if (len < 2) {
-        // Too short to have a header + payload — discard
-        s_radio.startReceive();
-        return 0;
-    }
-    uint8_t rnode_hdr = rx_tmp[0];
-    size_t payload_len = len - 1;
-    if (payload_len > bufsize) payload_len = bufsize;
-    memcpy(buf, rx_tmp + 1, payload_len);
+    // Re-enter RX immediately so we don't miss the second half of a split
+    s_radio.startReceive();
 
-    // Decode the Reticulum flags byte (now at buf[0] after header strip)
-    const char* pt_name = "UNK";
-    uint8_t pt  = 0;
-    uint8_t ctx = 0;
-    if (payload_len > 0) {
-        pt  = (uint8_t)(buf[0] & 0x03);
-        ctx = (uint8_t)((buf[0] >> 5) & 0x01);
-        switch (pt) {
-            case 0: pt_name = "DATA";     break;
-            case 1: pt_name = "ANNOUNCE"; break;
-            case 2: pt_name = "LINKREQ";  break;
-            case 3: pt_name = "PROOF";    break;
-        }
-    }
+    if (state != RADIOLIB_ERR_NONE || len < 2) return 0;
+
+    // Parse RNode header
+    uint8_t rnode_hdr = rx_tmp[0];
+    uint8_t seq = (rnode_hdr >> 4) & 0x0F;
+    bool is_split = (rnode_hdr & FLAG_SPLIT) != 0;
+    uint8_t* payload = rx_tmp + 1;
+    size_t payload_len = len - 1;
 
     Serial.print("Radio: RX ");
     Serial.print(payload_len);
@@ -242,48 +232,95 @@ int read_pending(uint8_t* buf, size_t bufsize) {
     Serial.print(rssi, 1);
     Serial.print(" dBm  SNR=");
     Serial.print(snr, 1);
-    Serial.print(" dB  pt=");
-    Serial.print(pt_name);
-    Serial.print("  ctx=");
-    Serial.print(ctx);
-    Serial.print("  rhdr=0x");
-    Serial.println(rnode_hdr, HEX);
-
-    int sr = s_radio.startReceive();
-    if (sr != RADIOLIB_ERR_NONE) {
-        Serial.print("Radio: startReceive() failed after RX, code ");
-        Serial.println(sr);
+    Serial.print(" dB");
+    if (is_split) {
+        Serial.print("  SPLIT seq=");
+        Serial.print(seq);
+        Serial.print(s_split_seq == 0xFF ? " (first)" : " (second)");
     }
 
-    return (state == RADIOLIB_ERR_NONE) ? (int)payload_len : -1;
+    if (is_split) {
+        if (s_split_seq == 0xFF) {
+            // First half — buffer it
+            if (payload_len > sizeof(s_split_buf)) {
+                Serial.println("  SPLIT first half too large, dropping");
+                return 0;
+            }
+            memcpy(s_split_buf, payload, payload_len);
+            s_split_len = payload_len;
+            s_split_seq = seq;
+            s_split_ms  = millis();
+            Serial.println("  (buffered)");
+            return 0;  // not ready yet
+        }
+        else if (seq == s_split_seq) {
+            // Second half — join with buffered first half
+            size_t total = s_split_len + payload_len;
+            if (total > bufsize || total > MAX_PAYLOAD) {
+                Serial.println("  SPLIT reassembled too large, dropping");
+                s_split_seq = 0xFF;
+                s_split_len = 0;
+                return 0;
+            }
+            memcpy(buf, s_split_buf, s_split_len);
+            memcpy(buf + s_split_len, payload, payload_len);
+            Serial.print("  (reassembled ");
+            Serial.print(total);
+            Serial.println("B)");
+            s_split_seq = 0xFF;
+            s_split_len = 0;
+
+            // Log reassembled packet type
+            if (total > 0) {
+                uint8_t pt = buf[0] & 0x03;
+                const char* pt_name = "UNK";
+                switch (pt) { case 0: pt_name="DATA"; break; case 1: pt_name="ANNOUNCE"; break; case 2: pt_name="LINKREQ"; break; case 3: pt_name="PROOF"; break; }
+                Serial.print("Radio: reassembled pt=");
+                Serial.print(pt_name);
+                Serial.print("  total=");
+                Serial.print(total);
+                Serial.println("B");
+            }
+            return (int)total;
+        }
+        else {
+            // Different sequence — replace with new first half
+            Serial.println("  SPLIT seq mismatch, replacing");
+            memcpy(s_split_buf, payload, payload_len);
+            s_split_len = payload_len;
+            s_split_seq = seq;
+            s_split_ms  = millis();
+            return 0;
+        }
+    }
+
+    // Non-split packet — deliver directly
+    if (payload_len > bufsize) payload_len = bufsize;
+    memcpy(buf, payload, payload_len);
+
+    // Log packet type
+    if (payload_len > 0) {
+        uint8_t pt = buf[0] & 0x03;
+        uint8_t ctx = (buf[0] >> 5) & 0x01;
+        const char* pt_name = "UNK";
+        switch (pt) { case 0: pt_name="DATA"; break; case 1: pt_name="ANNOUNCE"; break; case 2: pt_name="LINKREQ"; break; case 3: pt_name="PROOF"; break; }
+        Serial.print("  pt=");
+        Serial.print(pt_name);
+        Serial.print("  ctx=");
+        Serial.println(ctx);
+    } else {
+        Serial.println();
+    }
+
+    return (int)payload_len;
 }
 
-int transmit(const uint8_t* buf, size_t len) {
-    if (!s_online) return -1;
-    // RNode-compatible framing: prepend a 1-byte header that the
-    // RNode firmware expects on every LoRa frame. Without this,
-    // RNode receivers strip the first Reticulum byte as the "header"
-    // and pass a garbled packet to the host (Sideband/MeshChat).
-    //
-    // Header format (from RNode_Firmware.ino transmit()):
-    //   Upper nibble: random sequence number (cosmetic, for dedup)
-    //   Lower nibble: flags, bit 0 = FLAG_SPLIT (0x01)
-    //   For single-frame packets (<=254 bytes): flags = 0x00
-    //
-    // We build a temporary buffer with the header prepended. The
-    // +1 byte is negligible overhead vs the LoRa airtime.
-    uint8_t rnode_header = (uint8_t)(random(256) & 0xF0); // random seq, no flags
-    uint8_t tx_buf[512];
-    if (len + 1 > sizeof(tx_buf)) return -1;
-    tx_buf[0] = rnode_header;
-    memcpy(tx_buf + 1, buf, len);
-
-    // Force standby before TX. If standby fails (SPI timeout after
-    // long flash I/O), hardware-reset the radio and reconfigure.
-    int standby_state = s_radio.standby();
-    if (standby_state != RADIOLIB_ERR_NONE) {
+// Internal: force standby with recovery if SPI fails
+static void _ensure_standby() {
+    int state = s_radio.standby();
+    if (state != RADIOLIB_ERR_NONE) {
         Serial.print("Radio: standby failed (");
-        Serial.print(standby_state);
+        Serial.print(state);
         Serial.println("), resetting radio");
         digitalWrite(PIN_LORA_RESET, LOW);
         delay(10);
@@ -291,18 +328,68 @@ int transmit(const uint8_t* buf, size_t len) {
         delay(20);
         if (s_cfg_ptr) {
             begin(*s_cfg_ptr);
-            // Re-register the DIO1 ISR — begin() clears it.
-            // Without this, rx_pending() never fires and the
-            // radio goes deaf after recovery.
             s_radio.setPacketReceivedAction(isr_packet_received);
         }
     }
+}
+
+// Internal: transmit a single LoRa frame (header + payload)
+static int _tx_frame(uint8_t header, const uint8_t* payload, size_t len) {
+    uint8_t tx_buf[256];
+    if (len + 1 > sizeof(tx_buf)) return -1;
+    tx_buf[0] = header;
+    memcpy(tx_buf + 1, payload, len);
 
     int state = s_radio.transmit(tx_buf, len + 1);
     if (state != RADIOLIB_ERR_NONE) {
         Serial.print("Radio: TX error code=");
         Serial.println(state);
     }
+    return state;
+}
+
+int transmit(const uint8_t* buf, size_t len) {
+    if (!s_online) return -1;
+    if (len > MAX_PAYLOAD) return -1;
+
+    // RNode-compatible framing with split support.
+    // Single frame: header (random seq, no flags) + up to 254 payload bytes
+    // Split frame:  two frames with same header (random seq + FLAG_SPLIT)
+    //   Frame 1: header + first 254 bytes
+    //   Frame 2: header + remaining bytes
+
+    _ensure_standby();
+
+    uint8_t header = (uint8_t)(random(256) & 0xF0);  // random seq, no flags
+    int state;
+
+    if (len <= SINGLE_MTU - 1) {
+        // Single frame
+        state = _tx_frame(header, buf, len);
+    } else {
+        // Split into two frames
+        header |= FLAG_SPLIT;
+        size_t first_len = SINGLE_MTU - 1;  // 254 bytes
+        size_t second_len = len - first_len;
+
+        Serial.print("Radio: TX split ");
+        Serial.print(first_len);
+        Serial.print("+");
+        Serial.print(second_len);
+        Serial.print("B (total ");
+        Serial.print(len);
+        Serial.println("B)");
+
+        state = _tx_frame(header, buf, first_len);
+        if (state == RADIOLIB_ERR_NONE) {
+            // Brief pause between frames — matches RNode firmware behavior
+            s_radio.startReceive();  // transition TX→RX→TX
+            delay(1);
+            _ensure_standby();
+            state = _tx_frame(header, buf + first_len, second_len);
+        }
+    }
+
     s_radio.startReceive();
     // Clear the ISR flag AFTER re-entering RX. The SX1262's DIO1
     // line can glitch during the TX→Standby→RX transition, causing
