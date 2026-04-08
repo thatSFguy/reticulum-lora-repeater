@@ -273,10 +273,12 @@ int transmit(const uint8_t* buf, size_t len) {
     tx_buf[0] = rnode_header;
     memcpy(tx_buf + 1, buf, len);
 
-    // RadioLib's transmit() is blocking — it puts the chip in TX
-    // mode, waits for TX_DONE, and then returns. LoRa activity is
-    // paused in the main loop when BLE is connected, so this
-    // blocking call won't starve the SoftDevice.
+    // Force standby before TX — the radio may still be in RX mode
+    // from a previous startReceive(). RadioLib's transmit() tries
+    // to transition RX→TX but can timeout (-707) if the SX1262 is
+    // mid-receive or the SPI state is stale from path table I/O.
+    s_radio.standby();
+
     int state = s_radio.transmit(tx_buf, len + 1);
     if (state != RADIOLIB_ERR_NONE) {
         Serial.print("Radio: TX error code=");
