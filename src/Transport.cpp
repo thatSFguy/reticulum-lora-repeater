@@ -157,7 +157,7 @@ void tick() {
     // -1 = error), and internally re-enters continuous RX on the
     // chip before returning, so there's no RX downtime between
     // packet boundaries.
-    uint8_t rx_buf[256];
+    uint8_t rx_buf[512];  // must fit reassembled split packets (up to 508 bytes)
     int rx_len = rlr::radio::read_pending(rx_buf, sizeof(rx_buf));
     if (rx_len > 0) {
         s_packets_in++;
