@@ -7,11 +7,15 @@
 // include/board/<name>.h file — nothing in this driver changes.
 
 #include "Radio.h"
+#include "Config.h"
 #include <Arduino.h>
 #include <SPI.h>
 #include <RadioLib.h>
 
 namespace rlr { namespace radio {
+
+// Stored config pointer for radio recovery after SPI failures.
+static const Config* s_cfg_ptr = nullptr;
 
 // ---- File-scope state ---------------------------------------------
 
@@ -65,6 +69,7 @@ bool init_hardware() {
 }
 
 bool begin(const Config& cfg) {
+    s_cfg_ptr = &cfg;  // store for radio recovery
     // RadioLib takes frequency in MHz (float), bandwidth in kHz
     // (float), SF, CR denominator, sync word, power dBm, preamble
     // length, TCXO voltage in volts, and a boolean for regulator LDO
@@ -273,11 +278,19 @@ int transmit(const uint8_t* buf, size_t len) {
     tx_buf[0] = rnode_header;
     memcpy(tx_buf + 1, buf, len);
 
-    // Force standby before TX — the radio may still be in RX mode
-    // from a previous startReceive(). RadioLib's transmit() tries
-    // to transition RX→TX but can timeout (-707) if the SX1262 is
-    // mid-receive or the SPI state is stale from path table I/O.
-    s_radio.standby();
+    // Force standby before TX. If standby fails (SPI timeout after
+    // long flash I/O), hardware-reset the radio and reconfigure.
+    int standby_state = s_radio.standby();
+    if (standby_state != RADIOLIB_ERR_NONE) {
+        Serial.print("Radio: standby failed (");
+        Serial.print(standby_state);
+        Serial.println("), resetting radio");
+        digitalWrite(PIN_LORA_RESET, LOW);
+        delay(10);
+        digitalWrite(PIN_LORA_RESET, HIGH);
+        delay(20);
+        if (s_cfg_ptr) begin(*s_cfg_ptr);
+    }
 
     int state = s_radio.transmit(tx_buf, len + 1);
     if (state != RADIOLIB_ERR_NONE) {
