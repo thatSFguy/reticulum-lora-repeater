@@ -289,7 +289,13 @@ int transmit(const uint8_t* buf, size_t len) {
         delay(10);
         digitalWrite(PIN_LORA_RESET, HIGH);
         delay(20);
-        if (s_cfg_ptr) begin(*s_cfg_ptr);
+        if (s_cfg_ptr) {
+            begin(*s_cfg_ptr);
+            // Re-register the DIO1 ISR — begin() clears it.
+            // Without this, rx_pending() never fires and the
+            // radio goes deaf after recovery.
+            s_radio.setPacketReceivedAction(isr_packet_received);
+        }
     }
 
     int state = s_radio.transmit(tx_buf, len + 1);
