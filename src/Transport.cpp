@@ -102,9 +102,19 @@ static bool            s_initialized = false;
 // (s_packets_in and s_packets_out are declared above the LoRaInterface
 // class so its send_outgoing() method can increment s_packets_out.)
 
-// RNS log callback — mirrors Reticulum's log stream to Serial so
-// library-level problems are visible during bring-up.
+// RNS log callback — mirrors Reticulum's log stream to Serial.
+// Filtered by the Config log_level field:
+//   0 = quiet (errors only)
+//   1 = normal (errors + warnings + info)
+//   2 = verbose (everything including debug/trace)
+static uint8_t s_log_level = 1;
+
 static void on_rns_log(const char* msg, RNS::LogLevel level) {
+    // Filter based on configured log level
+    if (s_log_level == 0 && level > RNS::LOG_ERROR) return;
+    if (s_log_level == 1 && level > RNS::LOG_NOTICE) return;
+    // level 2 = show everything
+
     Serial.print(RNS::getTimeString());
     Serial.print(" [");
     Serial.print(RNS::getLevelName(level));
@@ -118,7 +128,7 @@ static void on_rns_log(const char* msg, RNS::LogLevel level) {
 namespace rlr { namespace transport {
 
 bool init(const Config& cfg) {
-    (void)cfg;  // Phase 3+ will drive telemetry intervals etc. from cfg
+    s_log_level = cfg.log_level;
 
     RNS::set_log_callback(&on_rns_log);
 

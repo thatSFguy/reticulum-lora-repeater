@@ -21,7 +21,8 @@ namespace rlr {
 struct Config {
     // ---- schema ----
     uint16_t version;               // 1 = original, 2 = +BT/location
-    uint16_t _reserved;
+    uint8_t  log_level;             // 0=quiet, 1=normal (default), 2=verbose
+    uint8_t  _reserved;
 
     // ---- radio ----
     uint32_t freq_hz;               // e.g. 904375000

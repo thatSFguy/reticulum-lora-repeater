@@ -58,6 +58,7 @@ static uint32_t crc32_of(const uint8_t* data, size_t len) {
 void defaults(Config& out) {
     memset(&out, 0, sizeof(out));
     out.version          = 2;
+    out.log_level        = 1;  // normal
     out.freq_hz          = DEFAULT_CONFIG_FREQ_HZ;
     out.bw_hz            = DEFAULT_CONFIG_BW_HZ;
     out.sf               = DEFAULT_CONFIG_SF;
@@ -440,6 +441,14 @@ const char* set_field(Config& cfg, const char* key, const char* value) {
         cfg.altitude_m = (int32_t)v;
         return nullptr;
     }
+    if (streq(key, "log_level")) {
+        char* end = nullptr;
+        long v = strtol(value, &end, 10);
+        if (end == value || *end != '\0')    return "log_level must be an integer";
+        if (v < 0 || v > 2)                 return "log_level range 0..2 (0=quiet, 1=normal, 2=verbose)";
+        cfg.log_level = (uint8_t)v;
+        return nullptr;
+    }
     return "unknown key";
 }
 
@@ -461,6 +470,7 @@ void print_fields(const Config& cfg, Print& out) {
     out.print("latitude=");         out.println(cfg.latitude_udeg  / 1000000.0, 6);
     out.print("longitude=");        out.println(cfg.longitude_udeg / 1000000.0, 6);
     out.print("altitude=");         out.println(cfg.altitude_m);
+    out.print("log_level=");       out.println(cfg.log_level);
 }
 
 void print_fields_pipe(const Config& cfg, Print& out) {
@@ -487,7 +497,8 @@ void print_fields_pipe(const Config& cfg, Print& out) {
     out.print(cfg.bt_pin);             out.print('|');
     out.print(cfg.latitude_udeg  / 1000000.0, 6); out.print('|');
     out.print(cfg.longitude_udeg / 1000000.0, 6); out.print('|');
-    out.print(cfg.altitude_m);
+    out.print(cfg.altitude_m);         out.print('|');
+    out.print(cfg.log_level);
     // No println — caller may append more fields before the line ends.
 }
 

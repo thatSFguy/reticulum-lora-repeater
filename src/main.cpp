@@ -161,7 +161,7 @@ void loop() {
     // gives the user a real readout on demand.
     static uint32_t last_alive_ms = 0;
     uint32_t now = millis();
-    if ((int32_t)(now - last_alive_ms) >= 10000) {
+    if (g_config.log_level >= 1 && (int32_t)(now - last_alive_ms) >= 10000) {
         last_alive_ms = now;
         Serial.print("[alive] uptime=");
         Serial.print(now / 1000);

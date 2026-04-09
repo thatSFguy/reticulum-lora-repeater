@@ -570,8 +570,9 @@ def patch_data_forwarding(env):
 patch_bluefruit_ble_shim(env)     # noqa: F821
 patch_microreticulum(env)         # noqa: F821
 patch_identity_hash(env)          # noqa: F821
-patch_validate_announce_diag(env) # noqa: F821
-patch_announce_diag(env)          # noqa: F821
+# Diagnostic patches disabled for production — re-enable for debugging:
+# patch_validate_announce_diag(env) # noqa: F821
+# patch_announce_diag(env)          # noqa: F821
 patch_data_forwarding(env)        # noqa: F821
 
 

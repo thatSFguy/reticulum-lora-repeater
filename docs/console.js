@@ -181,7 +181,7 @@ class RLRConsole {
   static get PIPE_FIELDS() {
     return ['display_name','freq_hz','bw_hz','sf','cr','txp_dbm','batt_mult',
             'tele_interval_ms','lxmf_interval_ms','telemetry','lxmf','heartbeat',
-            'bt_enabled','bt_pin','latitude','longitude','altitude'];
+            'bt_enabled','bt_pin','latitude','longitude','altitude','log_level'];
   }
 
   parsePipe(line) {
@@ -500,6 +500,7 @@ class RLRConsole {
     $('cfg-latitude').value         = String(c.latitude || '0.000000');
     $('cfg-longitude').value        = String(c.longitude || '0.000000');
     $('cfg-altitude').value         = String(c.altitude || '0');
+    $('cfg-log_level').value        = String(c.log_level || '1');
     // No battery fields to populate — calibration panel is self-contained.
     // Show config panel now that data is loaded
     $('config-panel').classList.remove('hidden');
@@ -565,6 +566,7 @@ class RLRConsole {
       latitude:         $('cfg-latitude').value || '0',
       longitude:        $('cfg-longitude').value || '0',
       altitude:         $('cfg-altitude').value || '0',
+      log_level:        $('cfg-log_level').value || '1',
     };
   }
 
@@ -755,6 +757,7 @@ class RLRConsole {
       latitude:         parseFloat($('cfg-latitude').value) || 0,
       longitude:        parseFloat($('cfg-longitude').value) || 0,
       altitude:         parseInt($('cfg-altitude').value) || 0,
+      log_level:        parseInt($('cfg-log_level').value) || 1,
     };
     const json = JSON.stringify(cfg, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
@@ -796,6 +799,7 @@ class RLRConsole {
       if (cfg.latitude !== undefined)          $('cfg-latitude').value         = cfg.latitude;
       if (cfg.longitude !== undefined)         $('cfg-longitude').value        = cfg.longitude;
       if (cfg.altitude !== undefined)          $('cfg-altitude').value         = cfg.altitude;
+      if (cfg.log_level !== undefined)        $('cfg-log_level').value        = cfg.log_level;
       log('ok', 'config imported from ' + f.name + ' — edit display_name if needed, then Commit');
     } catch (e) {
       log('err', 'import failed: ' + e.message);
