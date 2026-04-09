@@ -567,6 +567,80 @@ def patch_data_forwarding(env):
             f.write(source)
 
 
+# ---------------------------------------------------------------
+#  Job 5 — Skip redundant path table writes
+#
+#  microReticulum writes to the path table on EVERY announce, even
+#  if the path hasn't changed (same source, same hop count). On a
+#  mesh with 50 nodes announcing every 30 min, this wears out the
+#  nRF52840's internal flash (~10K erase cycles) in weeks.
+#
+#  Fix: before calling _new_path_table.put(), check if an existing
+#  entry has the same hops and received_from. If so, skip the write.
+# ---------------------------------------------------------------
+
+PATH_DEDUP_MARKER = "// RLR_PATH_WRITE_DEDUP"
+
+PATH_DEDUP_ORIGINAL = '\t\t\t\t\t\t\tif (_new_path_table.put(packet.destination_hash().collection(), destination_table_entry, ttl)) {\n\t\t\t\t\t\t\t\tTRACEF("Added destination %s to path table!", packet.destination_hash().toHex().c_str());\n\t\t\t\t\t\t\t\t++_destinations_added;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\telse {\n\t\t\t\t\t\t\t\tERRORF("Failed to add destination %s to path table!", packet.destination_hash().toHex().c_str());\n\t\t\t\t\t\t\t}'
+
+PATH_DEDUP_PATCHED = """\t\t\t\t\t\t\t""" + PATH_DEDUP_MARKER + """
+\t\t\t\t\t\t\t// Check if the path already exists with same hops + source.
+\t\t\t\t\t\t\t// If unchanged, skip the flash write to reduce wear.
+\t\t\t\t\t\t\tbool path_changed = true;
+\t\t\t\t\t\t\t{
+\t\t\t\t\t\t\t\tDestinationEntry existing;
+\t\t\t\t\t\t\t\tif (_new_path_table.get(packet.destination_hash(), existing)) {
+\t\t\t\t\t\t\t\t\tif (existing._hops == announce_hops && existing._received_from == received_from) {
+\t\t\t\t\t\t\t\t\t\tpath_changed = false;
+\t\t\t\t\t\t\t\t\t}
+\t\t\t\t\t\t\t\t}
+\t\t\t\t\t\t\t}
+\t\t\t\t\t\t\tif (path_changed) {
+\t\t\t\t\t\t\t\tif (_new_path_table.put(packet.destination_hash().collection(), destination_table_entry, ttl)) {
+\t\t\t\t\t\t\t\t\tTRACEF("Added destination %s to path table!", packet.destination_hash().toHex().c_str());
+\t\t\t\t\t\t\t\t\t++_destinations_added;
+\t\t\t\t\t\t\t\t}
+\t\t\t\t\t\t\t\telse {
+\t\t\t\t\t\t\t\t\tERRORF("Failed to add destination %s to path table!", packet.destination_hash().toHex().c_str());
+\t\t\t\t\t\t\t\t}
+\t\t\t\t\t\t\t}
+\t\t\t\t\t\t\telse {
+\t\t\t\t\t\t\t\tTRACEF("Path to %s unchanged (hops=%d), skipping flash write", packet.destination_hash().toHex().c_str(), announce_hops);
+\t\t\t\t\t\t\t}"""
+
+
+def patch_path_write_dedup(env):
+    project_dir = env["PROJECT_DIR"]
+    env_name    = env["PIOENV"]
+    target = os.path.join(
+        project_dir, ".pio", "libdeps", env_name,
+        "microReticulum", "src", "Transport.cpp",
+    )
+    if not os.path.exists(target):
+        print("pre_build: microReticulum not yet fetched — path dedup patch skipped")
+        return
+
+    with open(target, "r", encoding="utf-8", newline="") as f:
+        source = f.read()
+    source = source.replace("\r\n", "\n")
+
+    if PATH_DEDUP_MARKER in source:
+        print("pre_build: path write dedup patch already applied")
+        return
+
+    if PATH_DEDUP_ORIGINAL not in source:
+        print("pre_build: path write dedup target not found (upstream may have changed)")
+        return
+
+    source = source.replace(PATH_DEDUP_ORIGINAL, PATH_DEDUP_PATCHED, 1)
+    assert PATH_DEDUP_MARKER in source
+
+    with open(target, "w", encoding="utf-8", newline="") as f:
+        f.write(source)
+
+    print("pre_build: applied path write dedup patch")
+
+
 patch_bluefruit_ble_shim(env)     # noqa: F821
 patch_microreticulum(env)         # noqa: F821
 patch_identity_hash(env)          # noqa: F821
@@ -574,6 +648,7 @@ patch_identity_hash(env)          # noqa: F821
 # patch_validate_announce_diag(env) # noqa: F821
 # patch_announce_diag(env)          # noqa: F821
 patch_data_forwarding(env)        # noqa: F821
+patch_path_write_dedup(env)       # noqa: F821
 
 
 # ---------------------------------------------------------------
