@@ -155,10 +155,9 @@ void loop() {
     rlr::serial_console::tick();
     rlr::ble::tick();
 
-    // Phase 2 bench-test aid: a once-every-10-seconds "alive" marker
-    // so a late-attach monitor has unambiguous proof the firmware is
-    // running. Remove once the SerialConsole's STATUS command (Phase 4)
-    // gives the user a real readout on demand.
+    // Periodic alive marker — provides at-a-glance proof the firmware
+    // is running and basic stats for a late-attach serial monitor.
+    // Suppressed at log_level 0 (quiet).
     static uint32_t last_alive_ms = 0;
     uint32_t now = millis();
     if (g_config.log_level >= 1 && (int32_t)(now - last_alive_ms) >= 10000) {
