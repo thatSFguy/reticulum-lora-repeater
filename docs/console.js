@@ -181,7 +181,7 @@ class RLRConsole {
   static get PIPE_FIELDS() {
     return ['display_name','freq_hz','bw_hz','sf','cr','txp_dbm','batt_mult',
             'tele_interval_ms','lxmf_interval_ms','telemetry','lxmf','heartbeat',
-            'bt_enabled','bt_pin','latitude','longitude','altitude','log_level'];
+            'bt_enabled','bt_pin','latitude','longitude','altitude','log_level','collector'];
   }
 
   parsePipe(line) {
@@ -501,6 +501,11 @@ class RLRConsole {
     $('cfg-longitude').value        = String(c.longitude || '0.000000');
     $('cfg-altitude').value         = String(c.altitude || '0');
     $('cfg-log_level').value        = String(c.log_level || '1');
+    $('cfg-collector').value        = c.collector || '';
+    // Normalize blank collector to 'none' for change-detection so an
+    // unset field doesn't spuriously diff against the blank→'none'
+    // mapping in formValues() (firmware rejects an empty SET value).
+    originalCfg.collector           = c.collector || 'none';
     // No battery fields to populate — calibration panel is self-contained.
     // Show config panel now that data is loaded
     $('config-panel').classList.remove('hidden');
@@ -567,6 +572,9 @@ class RLRConsole {
       longitude:        $('cfg-longitude').value || '0',
       altitude:         $('cfg-altitude').value || '0',
       log_level:        $('cfg-log_level').value || '1',
+      // Blank → 'none' so set_field() clears it (an empty value is
+      // rejected by the serial CONFIG SET path).
+      collector:        ($('cfg-collector').value.trim() || 'none'),
     };
   }
 
@@ -611,6 +619,11 @@ class RLRConsole {
 
     const alt = parseInt($('cfg-altitude').value);
     if (isNaN(alt) || alt < -100000 || alt > 100000) errs.push('Altitude must be -100000..100000 m');
+
+    const collector = $('cfg-collector').value.trim();
+    if (collector && !/^[0-9a-fA-F]{32}$/.test(collector)) {
+      errs.push('Collector must be 32 hex characters (16-byte destination hash) or blank');
+    }
 
     return errs;
   }
@@ -758,6 +771,7 @@ class RLRConsole {
       longitude:        parseFloat($('cfg-longitude').value) || 0,
       altitude:         parseInt($('cfg-altitude').value) || 0,
       log_level:        parseInt($('cfg-log_level').value) || 1,
+      collector:        $('cfg-collector').value.trim(),
     };
     const json = JSON.stringify(cfg, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
@@ -800,6 +814,7 @@ class RLRConsole {
       if (cfg.longitude !== undefined)         $('cfg-longitude').value        = cfg.longitude;
       if (cfg.altitude !== undefined)          $('cfg-altitude').value         = cfg.altitude;
       if (cfg.log_level !== undefined)        $('cfg-log_level').value        = cfg.log_level;
+      if (cfg.collector !== undefined)        $('cfg-collector').value        = cfg.collector;
       log('ok', 'config imported from ' + f.name + ' — edit display_name if needed, then Commit');
     } catch (e) {
       log('err', 'import failed: ' + e.message);

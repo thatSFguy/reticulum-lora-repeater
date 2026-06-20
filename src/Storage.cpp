@@ -8,7 +8,7 @@
 #include "Storage.h"
 #include <Arduino.h>
 
-#include <Utilities/OS.h>
+#include <microReticulum/Utilities/OS.h>
 
 // PlatformIO LDF-visibility include — the transitive include inside
 // microStore's adapter header isn't scanned aggressively enough by

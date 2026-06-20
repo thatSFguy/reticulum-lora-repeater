@@ -2,7 +2,7 @@
 // and NUS for read-only log stream.
 //
 // Custom RLR Service:
-//   CONFIG characteristic (read/write, 160 bytes) — pipe-delimited config
+//   CONFIG characteristic (read/write, 224 bytes) — pipe-delimited config
 //   COMMIT characteristic (write, 1 byte)         — write 0x01 to persist + reboot
 //   COMMAND characteristic (write, 64 bytes)       — text commands (ANNOUNCE, STATUS, etc.)
 //
@@ -98,7 +98,11 @@ static Config*  s_cfg_ptr = nullptr;  // pointer to live config
 
 // ---- Config pipe buffer ------------------------------------------
 
-static constexpr size_t PIPE_BUF_SIZE = 160;
+// Sized for the full pipe string: long fields (31-char display_name,
+// 32-hex collector, float lat/lon) plus 18 separators come to ~171 bytes
+// worst case, so 224 leaves headroom. Bump this if print_fields_pipe
+// gains more/longer fields.
+static constexpr size_t PIPE_BUF_SIZE = 224;
 
 // Build the pipe string into a static buffer, return length.
 static size_t _build_pipe(char* buf, size_t bufsize) {
@@ -138,7 +142,7 @@ static void _on_config_write(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t*
         "display_name", "freq_hz", "bw_hz", "sf", "cr", "txp_dbm",
         "batt_mult", "tele_interval_ms", "lxmf_interval_ms",
         "telemetry", "lxmf", "heartbeat", "bt_enabled", "bt_pin",
-        "latitude", "longitude", "altitude", "log_level"
+        "latitude", "longitude", "altitude", "log_level", "collector"
     };
     static constexpr size_t NUM_KEYS = sizeof(keys) / sizeof(keys[0]);
 
@@ -359,7 +363,7 @@ bool init(const Config& cfg) {
     // ---- Custom RLR Service ----
     s_rlr_service.begin();
 
-    // CONFIG characteristic: read + write, up to 160 bytes
+    // CONFIG characteristic: read + write, up to PIPE_BUF_SIZE bytes
     s_config_chr.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
     s_config_chr.setPermission(sec_read, sec_write);
     s_config_chr.setMaxLen(PIPE_BUF_SIZE);

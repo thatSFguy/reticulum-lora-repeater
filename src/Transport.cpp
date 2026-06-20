@@ -21,13 +21,13 @@
 #include <Arduino.h>
 
 // microReticulum stack — pulled in via platformio.ini lib_deps
-#include <Reticulum.h>
-#include <Transport.h>
-#include <Identity.h>
-#include <Destination.h>
-#include <Interface.h>
-#include <Bytes.h>
-#include <Utilities/OS.h>
+#include <microReticulum/Reticulum.h>
+#include <microReticulum/Transport.h>
+#include <microReticulum/Identity.h>
+#include <microReticulum/Destination.h>
+#include <microReticulum/Interface.h>
+#include <microReticulum/Bytes.h>
+#include <microReticulum/Utilities/OS.h>
 
 // The microStore FileSystem + its RNS::OS registration moved to
 // src/Storage.cpp in Phase 3 so Config::load_or_defaults() can run
@@ -65,14 +65,16 @@ protected:
         }
     }
 
-    void send_outgoing(const RNS::Bytes& data) override {
+    // Returns true if the frame was accepted for transmission. microReticulum's
+    // InterfaceImpl::send_outgoing is bool-returning (was void in older revisions).
+    bool send_outgoing(const RNS::Bytes& data) override {
         try {
             if (data.size() > 508) {
                 Serial.print("LoRaInterface::send_outgoing: DROPPED oversized packet (");
                 Serial.print(data.size());
                 Serial.println(" bytes > 508)");
                 RNS::InterfaceImpl::handle_outgoing(data);
-                return;
+                return true;
             }
             int n = rlr::radio::transmit(data.data(), data.size());
             if (n < 0) {
@@ -81,6 +83,7 @@ protected:
                 s_packets_out++;
             }
             RNS::InterfaceImpl::handle_outgoing(data);
+            return true;
         }
         catch (const std::bad_alloc&) {
             Serial.println("LoRaInterface::send_outgoing: bad_alloc");
@@ -89,6 +92,7 @@ protected:
             Serial.print("LoRaInterface::send_outgoing: ");
             Serial.println(e.what());
         }
+        return false;
     }
 };
 

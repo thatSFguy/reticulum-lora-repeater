@@ -255,6 +255,34 @@ and prints on every state change. See the sibling project's
   atomically; drag-dropping a UF2 built from a plain `.bin` does
   not. Prefer `-t upload` over manual UF2 drag-drop.
 
+### Telemetry not showing up in Sideband / MeshChat
+
+Symptom: the node appears under its name (`lxmf.delivery`) but you see
+no telemetry, and/or "it isn't advertised as a relay."
+
+- **A transport repeater does not advertise itself as a "relay."**
+  Reticulum transport is transparent — the node forwards announces and
+  data but emits no separate "relay" destination. Its `lxmf.delivery`
+  presence announce **is** the advertisement; seeing only that is
+  correct.
+- **Telemetry needs a configured collector.** Telemetry is sent as an
+  LXMF `FIELD_TELEMETRY` message to a specific recipient, not broadcast.
+  Set `collector` to the `lxmf.delivery` destination hash of the
+  Sideband / MeshChat instance that should receive it (`CONFIG SET
+  collector <32-hex>` or the webflasher field). With no collector set,
+  the node sends no telemetry — by design.
+- **The collector must have been heard first.** Opportunistic LXMF
+  encrypts to the collector's public key, which the node learns from the
+  collector's announce. If the serial log says `collector identity
+  unknown (no announce heard yet)`, wait for / trigger an announce from
+  the collector (e.g. open Sideband on the same channel) and the next
+  push will go out.
+- **Old `rlr.telemetry` ASCII beacon is gone.** Firmware ≤ 0.5.x emitted
+  a custom non-LXMF telemetry beacon that only unfiltered/custom clients
+  could see (SPEC.md §4.4). It has been replaced by spec-compliant LXMF
+  telemetry; `scripts/telemetry_receiver.py` is no longer needed and was
+  never shipped.
+
 ### Reticulum air interop
 
 - **Reticulum is not Meshtastic or MeshCore at the wire level.** They

@@ -23,10 +23,10 @@
 #include <Arduino.h>
 #include <string.h>
 
-#include <Reticulum.h>
-#include <Transport.h>
-#include <Destination.h>
-#include <Bytes.h>
+#include <microReticulum/Reticulum.h>
+#include <microReticulum/Transport.h>
+#include <microReticulum/Destination.h>
+#include <microReticulum/Bytes.h>
 
 namespace rlr { namespace lxmf_presence {
 

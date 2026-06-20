@@ -16,8 +16,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#include <Bytes.h>
-#include <Utilities/OS.h>
+#include <microReticulum/Bytes.h>
+#include <microReticulum/Utilities/OS.h>
 
 namespace rlr { namespace config {
 
@@ -31,6 +31,17 @@ static constexpr const char* CONFIG_PATH = "/config.bin";
 //   cr(1) + txp_dbm(1) + flags(1) + batt_mult(4) + tele_interval_ms(4) +
 //   lxmf_interval_ms(4) + display_name(32) + crc32(4) = 64 bytes.
 static constexpr size_t CONFIG_V1_SIZE = 64;
+
+// Size of the v2 Config struct on disk (before the v3 collector_hash[16]
+// field). v2 and v3 share an identical byte layout from `version` through
+// `display_name` (the first 76 bytes); v2 then places crc32 at offset 76,
+// while v3 inserts collector_hash[16] at 76 and moves crc32 to 92.
+//   v2 = 76 (fields) + 4 (crc32) = 80 bytes
+//   v3 = 76 (fields) + 16 (collector_hash) + 4 (crc32) = 96 bytes
+static constexpr size_t CONFIG_V2_SIZE = 80;
+// Byte offset where the shared field prefix ends (start of collector_hash
+// in v3 / crc32 in v2). Used by the v2->v3 migration below.
+static constexpr size_t CONFIG_SHARED_PREFIX = 76;
 
 // --- CRC-32 helper (zlib polynomial 0xEDB88320, reflected) -------
 //
@@ -57,7 +68,7 @@ static uint32_t crc32_of(const uint8_t* data, size_t len) {
 
 void defaults(Config& out) {
     memset(&out, 0, sizeof(out));
-    out.version          = 2;
+    out.version          = 3;
     out.log_level        = 1;  // normal
     out.freq_hz          = DEFAULT_CONFIG_FREQ_HZ;
     out.bw_hz            = DEFAULT_CONFIG_BW_HZ;
@@ -86,7 +97,7 @@ void defaults(Config& out) {
 // --- validate ----------------------------------------------------
 
 bool validate(const Config& cfg) {
-    if (cfg.version != 1 && cfg.version != 2)           return false;
+    if (cfg.version != 1 && cfg.version != 2 && cfg.version != 3) return false;
     if (cfg.sf < 7   || cfg.sf > 12)                    return false;
     if (cfg.cr < 5   || cfg.cr > 8)                     return false;
     if (cfg.txp_dbm < -9 || cfg.txp_dbm > 22)           return false;
@@ -123,10 +134,12 @@ bool load(Config& out) {
         RNS::Bytes data;
         size_t n = RNS::Utilities::OS::read_file(CONFIG_PATH, data);
 
-        // Determine if this is a v1 or v2 record by file size.
-        // v1 = CONFIG_V1_SIZE bytes, v2 = sizeof(Config).
+        // Determine the on-disk schema by file size.
+        //   v1 = CONFIG_V1_SIZE (64), v2 = CONFIG_V2_SIZE (80),
+        //   v3 = sizeof(Config). Older records are migrated forward.
         bool is_v1 = (n == CONFIG_V1_SIZE);
-        if (n != sizeof(Config) && !is_v1) {
+        bool is_v2 = (n == CONFIG_V2_SIZE);
+        if (n != sizeof(Config) && !is_v1 && !is_v2) {
             Serial.print("Config: /config.bin size mismatch (");
             Serial.print(n);
             Serial.print(" bytes, expected ");
@@ -182,29 +195,72 @@ bool load(Config& out) {
                 return false;
             }
 
-            // Migrate: set v2 defaults for new fields, bump version
+            // Migrate straight to v3: zero the v2 (bt/location) and v3
+            // (collector) additions, bump version. tmp was memset(0) above
+            // so collector_hash and the bt/location fields are already 0.
             tmp.bt_pin         = 0;
             tmp.latitude_udeg  = 0;
             tmp.longitude_udeg = 0;
             tmp.altitude_m     = 0;
             tmp.flags         &= ~CONFIG_FLAG_BT_ENABLED;  // BT off by default
-            tmp.version        = 2;
+            tmp.version        = 3;
 
-            // Re-compute CRC for the v2 layout and persist so future
+            // Re-compute CRC for the v3 layout and persist so future
             // boots take the fast path.
             tmp.crc32 = 0;
-            const size_t v2_crc_covered = sizeof(Config) - sizeof(uint32_t);
-            tmp.crc32 = crc32_of(reinterpret_cast<const uint8_t*>(&tmp), v2_crc_covered);
+            const size_t v3_crc_covered = sizeof(Config) - sizeof(uint32_t);
+            tmp.crc32 = crc32_of(reinterpret_cast<const uint8_t*>(&tmp), v3_crc_covered);
 
             RNS::Bytes migrated(reinterpret_cast<const uint8_t*>(&tmp), sizeof(Config));
             RNS::Utilities::OS::write_file(CONFIG_PATH, migrated);
-            Serial.println("Config: migrated v1 -> v2");
+            Serial.println("Config: migrated v1 -> v3");
 
             out = tmp;
             return true;
         }
 
-        // Normal v2 load path
+        if (is_v2) {
+            // v2 -> v3 migration. v2 shares the first CONFIG_SHARED_PREFIX
+            // (76) bytes with v3, then has crc32; v3 inserts
+            // collector_hash[16] before crc32. Verify the v2 CRC (covers
+            // the 76-byte prefix), copy that prefix into the v3 struct,
+            // leave collector_hash zeroed, re-stamp a v3 CRC, persist.
+            const uint8_t* p = data.data();
+
+            uint32_t want;
+            memcpy(&want, p + CONFIG_SHARED_PREFIX, sizeof(uint32_t));
+            uint32_t actual = crc32_of(p, CONFIG_SHARED_PREFIX);
+            if (actual != want) {
+                Serial.print("Config: v2 CRC mismatch (got 0x");
+                Serial.print(actual, HEX);
+                Serial.print(", want 0x");
+                Serial.print(want, HEX);
+                Serial.println(")");
+                return false;
+            }
+
+            memcpy(&tmp, p, CONFIG_SHARED_PREFIX);   // version..display_name
+            // collector_hash already zeroed by the memset above.
+            tmp.version = 3;
+
+            if (!validate(tmp)) {
+                Serial.println("Config: v2 CRC OK but field validation failed");
+                return false;
+            }
+
+            tmp.crc32 = 0;
+            const size_t v3_crc_covered = sizeof(Config) - sizeof(uint32_t);
+            tmp.crc32 = crc32_of(reinterpret_cast<const uint8_t*>(&tmp), v3_crc_covered);
+
+            RNS::Bytes migrated(reinterpret_cast<const uint8_t*>(&tmp), sizeof(Config));
+            RNS::Utilities::OS::write_file(CONFIG_PATH, migrated);
+            Serial.println("Config: migrated v2 -> v3");
+
+            out = tmp;
+            return true;
+        }
+
+        // Normal v3 load path
         memcpy(&tmp, data.data(), sizeof(Config));
 
         // CRC32 covers every byte before the crc32 field itself.
@@ -252,7 +308,7 @@ bool save(const Config& in) {
         }
 
         Config tmp = in;
-        tmp.version = 2;
+        tmp.version = 3;
         tmp.crc32   = 0;
         const size_t crc_covered = sizeof(Config) - sizeof(uint32_t);
         tmp.crc32 = crc32_of(reinterpret_cast<const uint8_t*>(&tmp), crc_covered);
@@ -318,6 +374,14 @@ static bool parse_bool(const char* v, bool& out) {
     if (streq(v, "1") || streq(v, "true") || streq(v, "on")  || streq(v, "yes")) { out = true;  return true; }
     if (streq(v, "0") || streq(v, "false")|| streq(v, "off") || streq(v, "no") ) { out = false; return true; }
     return false;
+}
+
+// Single hex digit to value, or -1 if not a hex character.
+static int hexval(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
 }
 
 const char* set_field(Config& cfg, const char* key, const char* value) {
@@ -449,7 +513,42 @@ const char* set_field(Config& cfg, const char* key, const char* value) {
         cfg.log_level = (uint8_t)v;
         return nullptr;
     }
+    if (streq(key, "collector")) {
+        // The telemetry collector's 16-byte lxmf.delivery destination
+        // hash, as 32 hex chars. "none"/"off"/"clear"/empty disables
+        // telemetry pushes (all-zero hash).
+        if (value[0] == '\0' || streq(value, "none") || streq(value, "off") || streq(value, "clear")) {
+            memset(cfg.collector_hash, 0, sizeof(cfg.collector_hash));
+            return nullptr;
+        }
+        if (strlen(value) != 32)             return "collector must be 32 hex chars (16-byte dest hash) or 'none'";
+        uint8_t tmp[16];
+        for (size_t i = 0; i < 16; i++) {
+            int hi = hexval(value[2*i]);
+            int lo = hexval(value[2*i + 1]);
+            if (hi < 0 || lo < 0)            return "collector must be hexadecimal";
+            tmp[i] = (uint8_t)((hi << 4) | lo);
+        }
+        memcpy(cfg.collector_hash, tmp, sizeof(cfg.collector_hash));
+        return nullptr;
+    }
     return "unknown key";
+}
+
+// Print the collector destination hash as lowercase hex, or nothing if
+// it's unset (all-zero) — so an empty field round-trips back through
+// set_field("collector", "") as "clear".
+static void print_collector_hex(const Config& cfg, Print& out) {
+    bool all_zero = true;
+    for (size_t i = 0; i < sizeof(cfg.collector_hash); i++) {
+        if (cfg.collector_hash[i] != 0) { all_zero = false; break; }
+    }
+    if (all_zero) return;
+    static const char* hx = "0123456789abcdef";
+    for (size_t i = 0; i < sizeof(cfg.collector_hash); i++) {
+        out.print(hx[cfg.collector_hash[i] >> 4]);
+        out.print(hx[cfg.collector_hash[i] & 0x0f]);
+    }
 }
 
 void print_fields(const Config& cfg, Print& out) {
@@ -471,6 +570,7 @@ void print_fields(const Config& cfg, Print& out) {
     out.print("longitude=");        out.println(cfg.longitude_udeg / 1000000.0, 6);
     out.print("altitude=");         out.println(cfg.altitude_m);
     out.print("log_level=");       out.println(cfg.log_level);
+    out.print("collector=");        print_collector_hex(cfg, out); out.println();
 }
 
 void print_fields_pipe(const Config& cfg, Print& out) {
@@ -480,7 +580,8 @@ void print_fields_pipe(const Config& cfg, Print& out) {
     //
     // Field order: display_name|freq_hz|bw_hz|sf|cr|txp_dbm|batt_mult|
     //   tele_interval_ms|lxmf_interval_ms|telemetry|lxmf|heartbeat|
-    //   bt_enabled|bt_pin|latitude|longitude|altitude
+    //   bt_enabled|bt_pin|latitude|longitude|altitude|log_level|collector
+    // Must stay in lockstep with Ble.cpp keys[] and console.js PIPE_FIELDS.
     out.print(cfg.display_name);       out.print('|');
     out.print(cfg.freq_hz);            out.print('|');
     out.print(cfg.bw_hz);              out.print('|');
@@ -498,7 +599,8 @@ void print_fields_pipe(const Config& cfg, Print& out) {
     out.print(cfg.latitude_udeg  / 1000000.0, 6); out.print('|');
     out.print(cfg.longitude_udeg / 1000000.0, 6); out.print('|');
     out.print(cfg.altitude_m);         out.print('|');
-    out.print(cfg.log_level);
+    out.print(cfg.log_level);          out.print('|');
+    print_collector_hex(cfg, out);
     // No println — caller may append more fields before the line ends.
 }
 

@@ -89,7 +89,7 @@ static void cmd_help(Print& out) {
     out.println("  CONFIG REVERT              - reseed staging from live config");
     out.println("  CONFIG COMMIT              - persist staging + reboot");
     out.println("  CALIBRATE BATTERY <mv>     - derive batt_mult from measured voltage");
-    out.println("  ANNOUNCE                   - force LXMF + telemetry announce now");
+    out.println("  ANNOUNCE                   - force LXMF presence announce + telemetry push now");
     ok(out);
 }
 
@@ -261,13 +261,13 @@ static void dispatch(char* line, Print& out) {
         return;
     }
 
-    // ANNOUNCE — force immediate LXMF presence + telemetry announce
+    // ANNOUNCE — force immediate LXMF presence announce + telemetry push
     if (strcmp(upper_copy, "ANNOUNCE") == 0) {
         if (!rlr::radio::online()) { err(out, "radio not online"); return; }
         out.println("firing LXMF presence announce...");
         rlr::lxmf_presence::announce_now(*s_live);
-        out.println("firing telemetry announce...");
-        rlr::telemetry::announce_now(*s_live);
+        out.println("sending telemetry message...");
+        rlr::telemetry::send_now(*s_live);
         ok(out);
         return;
     }

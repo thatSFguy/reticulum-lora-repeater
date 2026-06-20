@@ -57,8 +57,11 @@ webflasher/
 10. **Calibrate battery** (optional next step) — shows current
     `batt_mv`, asks for multimeter reading, computes correction,
     sends one more `CONFIG SET batt_mult` + `CONFIG COMMIT`.
-11. **Done** — green check, current `STATUS` readout, link to
-    `scripts/telemetry_receiver.py` for remote monitoring.
+11. **Done** — green check, current `STATUS` readout. For remote
+    monitoring, set a **telemetry collector** (a Sideband / MeshChat
+    instance's `lxmf.delivery` hash) so the node pushes spec-compliant
+    LXMF `FIELD_TELEMETRY` snapshots that show up natively in that app's
+    telemetry view.
 
 ## Why a fresh build instead of forking rnode-flasher
 

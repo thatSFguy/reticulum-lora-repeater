@@ -11,6 +11,7 @@
 
 #include <unity.h>
 #include <stdint.h>
+#include <stddef.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -35,6 +36,7 @@ struct Config {
     int32_t  longitude_udeg;
     int32_t  altitude_m;
     char     display_name[32];
+    uint8_t  collector_hash[16];   // v3
     uint32_t crc32;
 };
 #pragma pack(pop)
@@ -58,10 +60,17 @@ static bool parse_bool(const char* v, bool& out) {
     return false;
 }
 
+static int hexval(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
 // ── validate (copied from Config.cpp) ───────────────────────────
 
 static bool validate(const Config& cfg) {
-    if (cfg.version != 1 && cfg.version != 2)           return false;
+    if (cfg.version != 1 && cfg.version != 2 && cfg.version != 3) return false;
     if (cfg.sf < 7   || cfg.sf > 12)                    return false;
     if (cfg.cr < 5   || cfg.cr > 8)                     return false;
     if (cfg.txp_dbm < -9 || cfg.txp_dbm > 22)           return false;
@@ -204,6 +213,22 @@ static const char* set_field(Config& cfg, const char* key, const char* value) {
         cfg.altitude_m = (int32_t)v;
         return nullptr;
     }
+    if (streq(key, "collector")) {
+        if (value[0] == '\0' || streq(value, "none") || streq(value, "off") || streq(value, "clear")) {
+            memset(cfg.collector_hash, 0, sizeof(cfg.collector_hash));
+            return nullptr;
+        }
+        if (strlen(value) != 32)             return "collector must be 32 hex chars (16-byte dest hash) or 'none'";
+        uint8_t tmp[16];
+        for (size_t i = 0; i < 16; i++) {
+            int hi = hexval(value[2*i]);
+            int lo = hexval(value[2*i + 1]);
+            if (hi < 0 || lo < 0)            return "collector must be hexadecimal";
+            tmp[i] = (uint8_t)((hi << 4) | lo);
+        }
+        memcpy(cfg.collector_hash, tmp, sizeof(cfg.collector_hash));
+        return nullptr;
+    }
     return "unknown key";
 }
 
@@ -245,11 +270,17 @@ void test_validate_good_v1() {
     TEST_ASSERT_TRUE(validate(c));
 }
 
+void test_validate_good_v3() {
+    Config c = make_valid();
+    c.version = 3;
+    TEST_ASSERT_TRUE(validate(c));
+}
+
 void test_validate_bad_version() {
     Config c = make_valid();
     c.version = 0;
     TEST_ASSERT_FALSE(validate(c));
-    c.version = 3;
+    c.version = 4;
     TEST_ASSERT_FALSE(validate(c));
 }
 
@@ -530,6 +561,38 @@ void test_set_bool_invalid() {
     TEST_ASSERT_EQUAL_STRING("expected 0/1, true/false, on/off, yes/no", e);
 }
 
+void test_set_collector_ok() {
+    Config c = make_valid();
+    TEST_ASSERT_NULL(set_field(c, "collector", "00112233445566778899aabbccddeeff"));
+    static const uint8_t expect[16] = {
+        0x00,0x11,0x22,0x33,0x44,0x55,0x66,0x77,
+        0x88,0x99,0xaa,0xbb,0xcc,0xdd,0xee,0xff };
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(expect, c.collector_hash, 16);
+}
+
+void test_set_collector_clear() {
+    Config c = make_valid();
+    set_field(c, "collector", "00112233445566778899aabbccddeeff");
+    TEST_ASSERT_NULL(set_field(c, "collector", "none"));
+    for (size_t i = 0; i < 16; i++) TEST_ASSERT_EQUAL_UINT8(0, c.collector_hash[i]);
+    set_field(c, "collector", "00112233445566778899aabbccddeeff");
+    TEST_ASSERT_NULL(set_field(c, "collector", ""));   // empty also clears
+    for (size_t i = 0; i < 16; i++) TEST_ASSERT_EQUAL_UINT8(0, c.collector_hash[i]);
+}
+
+void test_set_collector_bad_length() {
+    Config c = make_valid();
+    TEST_ASSERT_NOT_NULL(set_field(c, "collector", "abcd"));
+    TEST_ASSERT_NOT_NULL(set_field(c, "collector", "00112233445566778899aabbccddeef"));   // 31 chars
+}
+
+void test_set_collector_non_hex() {
+    Config c = make_valid();
+    const char* e = set_field(c, "collector", "00112233445566778899aabbccddeegg");
+    TEST_ASSERT_NOT_NULL(e);
+    TEST_ASSERT_EQUAL_STRING("collector must be hexadecimal", e);
+}
+
 void test_set_unknown_key() {
     Config c = make_valid();
     const char* e = set_field(c, "nonexistent", "42");
@@ -559,6 +622,15 @@ void test_config_v1_size_constant() {
     TEST_ASSERT_EQUAL(64, 2+2+4+4+1+1+1+1+4+4+4+32+4);
 }
 
+void test_config_v2_v3_size_constants() {
+    // v2 = shared 76-byte prefix + crc32(4) = 80; v3 inserts
+    // collector_hash[16] before crc32 → 96. The firmware's migration
+    // discriminates old records by these exact byte totals.
+    TEST_ASSERT_EQUAL(80, (int)(offsetof(Config, collector_hash) + 4));
+    TEST_ASSERT_EQUAL(96, (int)sizeof(Config));
+    TEST_ASSERT_EQUAL(76, (int)offsetof(Config, collector_hash));
+}
+
 // ═══════════════════════════════════════════════════════════════
 
 int main() {
@@ -567,6 +639,7 @@ int main() {
     // validate tests
     RUN_TEST(test_validate_good_v2);
     RUN_TEST(test_validate_good_v1);
+    RUN_TEST(test_validate_good_v3);
     RUN_TEST(test_validate_bad_version);
     RUN_TEST(test_validate_sf_range);
     RUN_TEST(test_validate_cr_range);
@@ -605,12 +678,17 @@ int main() {
     RUN_TEST(test_set_altitude_boundaries);
     RUN_TEST(test_set_bool_flags);
     RUN_TEST(test_set_bool_invalid);
+    RUN_TEST(test_set_collector_ok);
+    RUN_TEST(test_set_collector_clear);
+    RUN_TEST(test_set_collector_bad_length);
+    RUN_TEST(test_set_collector_non_hex);
     RUN_TEST(test_set_unknown_key);
     RUN_TEST(test_set_null_args);
 
     // struct size
     RUN_TEST(test_config_struct_size);
     RUN_TEST(test_config_v1_size_constant);
+    RUN_TEST(test_config_v2_v3_size_constants);
 
     return UNITY_END();
 }

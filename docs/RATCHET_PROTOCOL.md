@@ -1,24 +1,18 @@
 # Reticulum 0.7+ Ratchet Announce Wire Format
 
-**Status**: implemented and building green on both Faketec and
-RAK4631. Applied as a pre-build string-replacement patch in
-`scripts/pre_build.py` (see `patch_microreticulum()`), targeting
-`.pio/libdeps/<env>/microReticulum/src/Identity.cpp`. **Bench
-validation against a live Sideband instance is still pending** —
-this spec and patch ship from code review against the upstream
-Python source and microReticulum C++ port, not from a captured
-real-world announce. First user to run this against a Sideband mesh
-should confirm announces are received, signature check succeeds,
-and the destination hash is added to the path table.
-
-**Risk profile**: defensive-only. The legacy code path (`context_flag
-= 0`, which is every pre-ratchet peer including our own outgoing
-announces) is **bit-identical** to the upstream microReticulum
-implementation — same byte offsets, same `signed_data` construction
-(operator<< with an empty `Bytes` is a no-op). Worst case if the
-ratchet path has a bug: Sideband announces are still rejected, same
-as before the patch. It cannot regress existing
-microReticulum↔microReticulum mesh traffic.
+**Status (2026-06): RESOLVED UPSTREAM — our patch has been retired.**
+The pinned microReticulum (`attermann/microReticulum@5fbdbf3`) now
+implements ratchet announce validation natively in
+`src/microReticulum/Identity.cpp` (the `context_flag` branch reads the
+32-byte ratchet and constructs `signed_data` as `destination_hash <<
+public_key << name_hash << random_hash << ratchet << app_data`) —
+byte-for-byte the same logic this firmware used to inject. The old
+`patch_microreticulum()` pre-build patch was therefore **removed** from
+`scripts/pre_build.py`; ratchet support now comes straight from the
+pinned library. This document is retained as a reference for the wire
+format and the history of the fix. Bench validation against a live
+Sideband instance is still worthwhile to confirm the native path
+behaves as expected on hardware.
 
 ## Why this exists
 
@@ -151,25 +145,25 @@ author just never wired it through to `Identity::validate_announce`,
 leaving a `// CBA RATCHET` TODO comment in `Packet.cpp:353` that
 marks where the rest of the ratchet work was intended.
 
-Our pre-build patch (`scripts/pre_build.py:patch_microreticulum()`)
-teaches `validate_announce` to read `packet.context_flag()` and
-branch on it. No header files or type definitions need to change —
+The fix teaches `validate_announce` to read `packet.context_flag()`
+and branch on it. No header files or type definitions need to change —
 the `RATCHETSIZE = 256` constant was already reserved in
-`Type.h:172` when the port author anticipated this work.
+`Type.h:172` when the port author anticipated this work. (This was
+once our `patch_microreticulum()` pre-build patch; the pinned
+microReticulum now does it natively.)
 
-## Implementation — shipped
+## Implementation — now native upstream
 
-Scope turned out narrower than initially scoped: only **one file, one
-function** needed patching. Header/unpack plumbing was already in
-place in upstream microReticulum.
+Scope turned out narrower than initially feared: only **one file, one
+function** changed. Header/unpack plumbing was already in place in
+microReticulum.
 
 ### The actual change
 
 `Identity::validate_announce` in
-`.pio/libdeps/<env>/microReticulum/src/Identity.cpp`, lines
-420-465ish. The upstream function uses legacy byte offsets
-unconditionally. Our patch introduces a `has_ratchet` branch driven
-by `packet.context_flag()`:
+`src/microReticulum/Identity.cpp` (in the pinned library). The legacy
+function used byte offsets unconditionally; the current code has a
+`has_ratchet` branch driven by `packet.context_flag()`:
 
 ```cpp
 const bool has_ratchet = (packet.context_flag() == Type::Packet::FLAG_SET);
@@ -222,43 +216,37 @@ requiring X25519 ratchet key generation, rotation timers, and
 persistence. Not needed for this phase's goal of "nodes visible in
 Sideband".
 
-### Why a pre-build patch instead of a fork
+### History: this shipped as a pre-build patch, now native upstream
 
-Zero external dependencies. No fork to maintain, no `lib_deps` pin
-to update, no user action required to create a fork. The patch
-lives in `scripts/pre_build.py` as a plain string replacement
-against the fetched lib source, with:
-
-  * An idempotency marker (`// RLR_RATCHET_PATCH`) so repeated
-    builds are no-ops
-  * A hard failure if the upstream source ever drifts from what
-    we targeted (so we catch silent patch breakage at build time
-    rather than shipping an unpatched firmware)
-
-When it's time to upstream this, the replacement block text IS the
-PR against `attermann/microReticulum`.
+Originally this was applied as a plain string-replacement patch in
+`scripts/pre_build.py` (`patch_microreticulum()`) against the fetched
+lib source, guarded by an idempotency marker and a hard-fail on
+upstream drift. As of `attermann/microReticulum@5fbdbf3` the same
+logic is in the library itself, so the patch was removed and the
+firmware now pins that commit (see `platformio.ini`). The notes below
+remain accurate as a description of the wire format the native code
+implements.
 
 ## Validation plan for the bench session
 
-1. Flash the current firmware (v0.1.1+ includes the ratchet patch).
+1. Flash the current firmware (ratchet validation now comes from the
+   pinned microReticulum, no patch required).
 2. Open the serial console and verify boot shows no new errors.
 3. Bring up Sideband or `reticulum-meshchat` on the same radio parameters
    (freq, BW, SF, CR).
 4. Wait for Sideband to emit an announce — typically within a minute of
    app start, or force one from the Sideband UI.
-5. Check the path table growth in our STATUS output:
-   - Before patch: `paths=0` indefinitely for Sideband peers
-   - After patch: `paths` counter should tick up when a Sideband announce
-     is processed
-6. If paths don't populate but the radio is hearing packets (`pin` is
-   ticking), un-comment the `TRACEF` lines in the patched `validate_announce`
-   to see exactly where the validation is failing, and compare the
-   `signed_data` hex against what an upstream Python reference dump
-   would produce.
-7. Once confirmed working, open a PR against `attermann/microReticulum`
-   upstream with the patch so other downstream projects benefit.
-   The PR is literally the replacement block text from
-   `scripts/pre_build.py:PATCHED_BLOCK` pasted into the upstream file.
+5. Check the path table growth in our STATUS output: the `paths` counter
+   should tick up when a Sideband (ratchet) announce is processed. If it
+   stays at `0` for Sideband peers while `pin` is ticking, the native
+   ratchet validation is rejecting the announce — capture the
+   `signed_data` hex and compare against an upstream Python reference
+   dump, and file the discrepancy upstream against
+   `attermann/microReticulum`.
+6. Historical note: the original injected patch text lived in
+   `scripts/pre_build.py` as `PATCHED_BLOCK` (removed in the
+   pin-to-upstream change; recoverable from git history) and matched
+   what upstream now ships natively.
 
 ## What this spec is NOT
 

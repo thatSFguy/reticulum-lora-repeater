@@ -45,10 +45,13 @@ change the display name, commit. Under 2 minutes per node after the first.
   via Web Bluetooth in Chrome — no USB cable needed. Custom GATT service
   for reliable config read/write, optional PIN pairing for security.
 - **Observable.** Announces on `lxmf.delivery` so MeshChat / Sideband
-  show it by name. Periodic telemetry announces report battery voltage,
-  uptime, heap, packet counters, and GPS location.
+  show it by name. When a **telemetry collector** is configured, the node
+  also pushes spec-compliant LXMF telemetry (`FIELD_TELEMETRY`) — battery,
+  uptime, heap, packet counters, and GPS location — to that collector,
+  visible natively in Sideband / MeshChat's telemetry view (no custom
+  receiver needed).
 - **Location-aware.** Configure latitude, longitude, and altitude (MSL)
-  — included in telemetry announces. Use the "Use my location" button
+  — included in the telemetry snapshot. Use the "Use my location" button
   in the webapp to auto-populate from your phone's GPS.
 
 ## What it isn't
@@ -106,7 +109,7 @@ The firmware operates as a full Reticulum transport node:
 
 ### Configuration
 
-All settings persist across reboots in internal flash (Config schema v2):
+All settings persist across reboots in internal flash (Config schema v3):
 
 | Field | Range | Description |
 |---|---|---|
@@ -117,18 +120,20 @@ All settings persist across reboots in internal flash (Config schema v2):
 | `cr` | 5-8 | Coding rate (4/5 to 4/8) |
 | `txp_dbm` | -9 to +22 dBm | TX power at SX1262 core |
 | `batt_mult` | 0.01-10.0 | ADC-to-mV calibration multiplier |
-| `tele_interval_ms` | any | Telemetry announce interval |
+| `tele_interval_ms` | any | Telemetry push interval (to collector) |
 | `lxmf_interval_ms` | any | LXMF presence announce interval |
-| `telemetry` | on/off | Enable battery/health announces |
+| `telemetry` | on/off | Enable LXMF telemetry pushes to the collector |
 | `lxmf` | on/off | Enable LXMF presence announces |
 | `heartbeat` | on/off | Enable heartbeat LED |
 | `bt_enabled` | on/off | Enable BLE advertising |
 | `bt_pin` | 0-999999 | BLE pairing PIN (0 = no PIN) |
+| `collector` | 32 hex / blank | Telemetry collector's `lxmf.delivery` hash; blank = telemetry off |
 | `latitude` | -90 to 90 | Node latitude (degrees) |
 | `longitude` | -180 to 180 | Node longitude (degrees) |
 | `altitude` | -100000 to 100000 | Altitude in meters MSL |
 
-Config v1 records are automatically migrated to v2 on first boot.
+Older v1/v2 config records are automatically migrated to v3 on first
+boot (missing fields, including `collector`, are zero-filled).
 
 ### Web flasher / configurator
 
@@ -155,7 +160,7 @@ STATUS                     - runtime status (uptime, radio, packets, battery)
 HELP                       - list all commands
 REBOOT                     - NVIC system reset
 DFU                        - reboot into DFU bootloader
-ANNOUNCE                   - force LXMF + telemetry announce now
+ANNOUNCE                   - force LXMF presence announce + telemetry push now
 CONFIG GET                 - print staged config (key=value lines)
 CONFIG GETP                - print staged config (pipe-delimited single line)
 CONFIG SET <key> <value>   - stage a field change
