@@ -71,8 +71,9 @@ change the display name, commit. Under 2 minutes per node after the first.
 | **XIAO nRF52840 Kit** (Seeed XIAO + Wio-SX1262 daughter) | SX1262 | Shipping — flash via UF2 drag-and-drop |
 | **Heltec Mesh Node T114** | Integrated SX1262 | Shipping in releases |
 | **RAK3401 1-Watt** (WisBlock + 1W PA) | SX1262 + 1W PA | Shipping in releases |
+| **LilyGO T-Echo** | Integrated SX1262 | Shipping — pins from Meshtastic, not yet bench-validated |
 
-All five boards share the same firmware source — each board is just
+All six boards share the same firmware source — each board is just
 one header file in `include/board/`. Adding a new nRF52840 + SX1262
 board is a ~100-line header + one env block in `platformio.ini`.
 See `docs/ADDING_A_BOARD.md`.
@@ -181,12 +182,12 @@ pio test -e native          # run unit tests (host-side, Unity framework)
 ```
 
 Available build environments: `Faketec`, `RAK4631`, `XIAO_nRF52840`,
-`Heltec_T114`, `RAK3401`, `native` (tests only).
+`Heltec_T114`, `RAK3401`, `T-Echo`, `native` (tests only).
 
 ## CI / Releases
 
 Every tagged version (`v*`) triggers a GitHub Actions workflow that:
-1. Builds firmware for all five boards in parallel
+1. Builds firmware for all six boards in parallel
 2. Creates a GitHub Release with `.zip`, `.hex`, and `.uf2` assets per board
 3. Publishes firmware to `docs/firmware/<tag>/` for the web flasher
 4. Regenerates the firmware manifest so the web flasher auto-discovers new versions

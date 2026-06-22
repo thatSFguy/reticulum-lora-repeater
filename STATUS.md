@@ -7,9 +7,10 @@ state at a glance.
 ## Current state
 
 Shipping firmware — tagged releases (`v0.5.x`) published to GitHub
-Releases and the web flasher (`docs/firmware/`). All five board envs
-(`Faketec`, `RAK4631`, `XIAO_nRF52840`, `Heltec_T114`, `RAK3401`) build
-from a single source tree; `native` runs the host test suite.
+Releases and the web flasher (`docs/firmware/`). All six board envs
+(`Faketec`, `RAK4631`, `XIAO_nRF52840`, `Heltec_T114`, `RAK3401`,
+`T-Echo`) build from a single source tree; `native` runs the host test
+suite.
 
 - **Radio / transport** — RadioLib-driven SX1262, full Reticulum
   transport node: announce rebroadcast, DATA/PROOF forwarding, RNode

@@ -49,6 +49,7 @@ jobs:
           - XIAO_nRF52840
           - Heltec_T114
           - RAK3401
+          - T-Echo
 
     steps:
       - name: Checkout
