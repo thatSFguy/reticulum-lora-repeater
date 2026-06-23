@@ -76,6 +76,14 @@ protected:
                 RNS::InterfaceImpl::handle_outgoing(data);
                 return true;
             }
+            // RX-only gate (issue #4): when TX is disabled the device
+            // silently drops outgoing frames. We report success to the
+            // stack so it treats the packet as handled (no retry churn)
+            // and we don't bump s_packets_out, keeping STATUS honest.
+            if (!rlr::radio::tx_enabled()) {
+                RNS::InterfaceImpl::handle_outgoing(data);
+                return true;
+            }
             int n = rlr::radio::transmit(data.data(), data.size());
             if (n < 0) {
                 Serial.println("LoRaInterface::send_outgoing: radio::transmit() error");

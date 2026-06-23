@@ -49,12 +49,13 @@ See `src/Config.h` for the canonical definition.
 | `sf` | — | Spreading factor, 7–12. |
 | `cr` | — | Coding rate denominator (5..8 → 4/5..4/8). |
 | `txp_dbm` | dBm | Target output power at the SX1262 core pin (not the antenna — external PAs add their own gain). Range -9..+22 on SX1262. |
-| `flags` | bitmask | Bit 0 = telemetry, 1 = LXMF presence, 2 = heartbeat, 3 = BT enabled. |
+| `flags` | bitmask | Bit 0 = telemetry, 1 = LXMF presence, 2 = heartbeat, 3 = BT enabled, 4 = **TX disabled** (stored inverted — see `tx_enabled` below). |
 | `batt_mult` | — | Raw-ADC → millivolts scaling factor. **Must be calibrated per-board with a multimeter.** |
 | `tele_interval_ms` | ms | Between LXMF telemetry pushes to the collector. Default 3 h. |
 | `lxmf_interval_ms` | ms | Between LXMF presence announces. Default 30 min. |
 | `display_name` | UTF-8 | NUL-terminated, max 31 bytes of content. What MeshChat / Sideband show. |
 | `collector_hash` | 16 bytes | Recipient `lxmf.delivery` destination hash for telemetry pushes (`FIELD_TELEMETRY`). All-zero = telemetry disabled. Set via the `collector` key (32 hex chars, or `none` to clear). Added in schema **v3**. |
+| `tx_enabled` | on/off | Whether transmission is allowed. Backed by `flags` bit 4 (stored inverted as TX-disabled). **A fresh flash boots receive-only** (`tx_enabled = 0`) so the device never transmits on a potentially-illegal default frequency; set a region-legal `freq_hz` then `tx_enabled = 1`. The inverted encoding means an existing saved config (bit clear) keeps TX enabled across a firmware upgrade. |
 | `crc32` | — | CRC-32 of all preceding bytes. Corrupt records are rejected and the loader falls back to defaults. |
 
 ### Telemetry is LXMF `FIELD_TELEMETRY`, not a custom announce
@@ -98,9 +99,13 @@ no persisted config exists yet.
 
 Safe-by-default philosophy:
 
+- `tx_enabled = 0` — a freshly-flashed device boots **receive-only** and
+  will not key the transmitter at all (every TX path is gated at
+  `radio::transmit()`). The operator must set a region-legal `freq_hz`
+  and then `tx_enabled = 1` before the node transmits.
 - `freq_hz = 915000000` — legal in US ISM, but **may be illegal in
-  your region**. The webflasher forces region selection before
-  allowing the first commit to catch this.
+  your region**. Combined with the `tx_enabled` gate above, the device
+  never emits on this default until the operator confirms it.
 - `txp_dbm = 14` — conservative; user raises it after confirming
   regional legality.
 - `display_name = "Unconfigured Repeater"` — the node literally

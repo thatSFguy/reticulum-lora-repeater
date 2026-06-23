@@ -32,6 +32,12 @@ static SX1262 s_radio(&s_module);
 
 static bool s_online = false;
 
+// Transmission gate (issue #4). Captured from config::tx_enabled() in
+// begin(). When false the device is RX-only: transmit() drops outgoing
+// frames and the radio stays in receive. Defaults to false so a missed
+// begin() can never produce unconfigured emissions.
+static bool s_tx_enabled = false;
+
 // ---- RNode split-packet reassembly state --------------------------
 // RNode splits packets > 254 bytes into two LoRa frames with the
 // same header byte (upper nibble = sequence, lower bit 0 = FLAG_SPLIT).
@@ -83,6 +89,7 @@ bool init_hardware() {
 
 bool begin(const Config& cfg) {
     s_cfg_ptr = &cfg;  // store for radio recovery
+    s_tx_enabled = config::tx_enabled(cfg);  // capture TX gate (issue #4)
     // RadioLib takes frequency in MHz (float), bandwidth in kHz
     // (float), SF, CR denominator, sync word, power dBm, preamble
     // length, TCXO voltage in volts, and a boolean for regulator LDO
@@ -154,6 +161,8 @@ bool begin(const Config& cfg) {
     Serial.print(" dBm, TCXO=");
     Serial.print(tcxo_v, 2);
     Serial.println(" V");
+    Serial.print("Radio: TX ");
+    Serial.println(s_tx_enabled ? "ENABLED" : "DISABLED (RX-only)");
     return true;
 }
 
@@ -178,6 +187,7 @@ bool start_rx() {
 }
 
 bool online()     { return s_online; }
+bool tx_enabled() { return s_tx_enabled; }
 bool rx_pending() { return s_rx_flag; }
 
 void stop() {
@@ -350,6 +360,13 @@ static int _tx_frame(uint8_t header, const uint8_t* payload, size_t len) {
 
 int transmit(const uint8_t* buf, size_t len) {
     if (!s_online) return -1;
+    // RX-only gate (issue #4): refuse to key the transmitter until the
+    // operator has confirmed a region-legal frequency and enabled TX.
+    // This is the hardware chokepoint — every announce, telemetry push,
+    // and repeated packet flows through here — so the guard holds even
+    // if a higher layer forgets to check tx_enabled(). The frame is
+    // dropped and the chip stays in receive.
+    if (!s_tx_enabled) return -1;
     if (len > MAX_PAYLOAD) return -1;
 
     // RNode-compatible framing with split support.

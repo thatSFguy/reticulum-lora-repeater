@@ -215,6 +215,19 @@
         <input id="cfg-txp_dbm" type="number" min="-9" max="22" step="1"></div>
     </div>
     <div class="row">
+      <div class="field">
+        <label>transmit</label>
+        <div style="padding-top: 6px;">
+          <label style="display:inline; text-transform:none; font-size:13px; color:var(--text);"><input id="cfg-tx_enabled" type="checkbox"> enable transmit (TX)</label>
+        </div>
+        <p style="margin:6px 0 0; font-size:12px; color:var(--muted); text-transform:none;">
+          New devices ship <strong>receive-only</strong>. Only enable TX after you have set a
+          frequency that is <strong>legal to transmit on in your region</strong> — operating on
+          the wrong band may be unlawful.
+        </p>
+      </div>
+    </div>
+    <div class="row">
       <div class="field narrow"><label>telemetry interval (min)</label>
         <input id="cfg-tele_interval_min" type="number" min="0" step="1" placeholder="e.g. 180"></div>
       <div class="field narrow"><label>lxmf interval (min)</label>

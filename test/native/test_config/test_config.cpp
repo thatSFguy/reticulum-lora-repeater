@@ -42,11 +42,16 @@ struct Config {
 #pragma pack(pop)
 
 enum : uint8_t {
-    CONFIG_FLAG_TELEMETRY  = 1 << 0,
-    CONFIG_FLAG_LXMF       = 1 << 1,
-    CONFIG_FLAG_HEARTBEAT  = 1 << 2,
-    CONFIG_FLAG_BT_ENABLED = 1 << 3,
+    CONFIG_FLAG_TELEMETRY   = 1 << 0,
+    CONFIG_FLAG_LXMF        = 1 << 1,
+    CONFIG_FLAG_HEARTBEAT   = 1 << 2,
+    CONFIG_FLAG_BT_ENABLED  = 1 << 3,
+    CONFIG_FLAG_TX_DISABLED = 1 << 4,  // stored inverted; see tx_enabled()
 };
+
+static bool tx_enabled(const Config& cfg) {
+    return !(cfg.flags & CONFIG_FLAG_TX_DISABLED);
+}
 
 // ── Helpers (copied from Config.cpp) ────────────────────────────
 
@@ -177,6 +182,13 @@ static const char* set_field(Config& cfg, const char* key, const char* value) {
                                                : CONFIG_FLAG_BT_ENABLED;
         if (b) cfg.flags |=  bit;
         else   cfg.flags &= ~bit;
+        return nullptr;
+    }
+    if (streq(key, "tx_enabled")) {
+        bool b;
+        if (!parse_bool(value, b))           return "expected 0/1, true/false, on/off, yes/no";
+        if (b) cfg.flags &= ~CONFIG_FLAG_TX_DISABLED;
+        else   cfg.flags |=  CONFIG_FLAG_TX_DISABLED;
         return nullptr;
     }
     if (streq(key, "bt_pin")) {
@@ -554,6 +566,36 @@ void test_set_bool_flags() {
     TEST_ASSERT_EQUAL_UINT8(CONFIG_FLAG_HEARTBEAT, c.flags & CONFIG_FLAG_HEARTBEAT);
 }
 
+void test_set_tx_enabled_inverted() {
+    // tx_enabled is stored inverted in CONFIG_FLAG_TX_DISABLED so that a
+    // cleared flags bit means "transmit allowed" (issue #4). Enabling TX
+    // clears the bit; disabling sets it; tx_enabled() reflects that.
+    Config c = make_valid();
+
+    // Start from the fresh-flash default: TX inhibited.
+    c.flags = CONFIG_FLAG_TX_DISABLED;
+    TEST_ASSERT_FALSE(tx_enabled(c));
+
+    // Enabling TX clears the inhibit bit.
+    TEST_ASSERT_NULL(set_field(c, "tx_enabled", "1"));
+    TEST_ASSERT_EQUAL_UINT8(0, c.flags & CONFIG_FLAG_TX_DISABLED);
+    TEST_ASSERT_TRUE(tx_enabled(c));
+
+    // Disabling TX sets the inhibit bit again.
+    TEST_ASSERT_NULL(set_field(c, "tx_enabled", "off"));
+    TEST_ASSERT_EQUAL_UINT8(CONFIG_FLAG_TX_DISABLED, c.flags & CONFIG_FLAG_TX_DISABLED);
+    TEST_ASSERT_FALSE(tx_enabled(c));
+
+    // A legacy/migrated config with the bit clear stays TX-enabled.
+    c.flags = CONFIG_FLAG_TELEMETRY | CONFIG_FLAG_LXMF;
+    TEST_ASSERT_TRUE(tx_enabled(c));
+
+    // Bad value rejected, flags untouched.
+    uint8_t before = c.flags;
+    TEST_ASSERT_NOT_NULL(set_field(c, "tx_enabled", "maybe"));
+    TEST_ASSERT_EQUAL_UINT8(before, c.flags);
+}
+
 void test_set_bool_invalid() {
     Config c = make_valid();
     const char* e = set_field(c, "telemetry", "maybe");
@@ -677,6 +719,7 @@ int main() {
     RUN_TEST(test_set_altitude_ok);
     RUN_TEST(test_set_altitude_boundaries);
     RUN_TEST(test_set_bool_flags);
+    RUN_TEST(test_set_tx_enabled_inverted);
     RUN_TEST(test_set_bool_invalid);
     RUN_TEST(test_set_collector_ok);
     RUN_TEST(test_set_collector_clear);

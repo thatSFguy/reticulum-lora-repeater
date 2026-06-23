@@ -103,6 +103,7 @@ static void cmd_status(Print& out) {
     uint32_t up_s = millis() / 1000;
     out.print("uptime_s=");  out.println(up_s);
     out.print("radio=");     out.println(rlr::radio::online() ? "up" : "down");
+    out.print("tx=");        out.println(rlr::radio::tx_enabled() ? "enabled" : "disabled");
     out.print("packets_in=");  out.println(rlr::transport::packets_in());
     out.print("packets_out="); out.println(rlr::transport::packets_out());
     out.print("paths=");       out.println(rlr::transport::path_count());

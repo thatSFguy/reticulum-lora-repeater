@@ -110,6 +110,21 @@ The firmware operates as a full Reticulum transport node:
 
 ### Configuration
 
+> ⚠️ **Receive-only out of the box.** A freshly-flashed device does **not**
+> transmit. The default LoRa frequency is not legal to transmit on
+> everywhere, so you must first set a frequency that is legal in your
+> region and then enable TX:
+>
+> ```
+> CONFIG SET freq_hz <your-region-frequency>
+> CONFIG SET tx_enabled 1
+> CONFIG COMMIT
+> ```
+>
+> (or tick **enable transmit (TX)** in the web flasher config form).
+> Already-configured devices upgrading from an older firmware keep their
+> existing TX state.
+
 All settings persist across reboots in internal flash (Config schema v3):
 
 | Field | Range | Description |
@@ -120,6 +135,7 @@ All settings persist across reboots in internal flash (Config schema v3):
 | `sf` | 7-12 | Spreading factor |
 | `cr` | 5-8 | Coding rate (4/5 to 4/8) |
 | `txp_dbm` | -9 to +22 dBm | TX power at SX1262 core |
+| `tx_enabled` | on/off | Allow transmission. **Off on a freshly-flashed device** — the node is receive-only until you set a region-legal `freq_hz` and turn this on. |
 | `batt_mult` | 0.01-10.0 | ADC-to-mV calibration multiplier |
 | `tele_interval_ms` | any | Telemetry push interval (to collector) |
 | `lxmf_interval_ms` | any | LXMF presence announce interval |

@@ -35,6 +35,12 @@ bool start_rx();
 // Query whether the radio passed begin() (i.e. is configured).
 bool online();
 
+// Query whether transmission is permitted. False when the device is in
+// the RX-only default (issue #4): transmit() will drop outgoing frames
+// and stay in receive. Reflects config::tx_enabled() as captured by the
+// last begin() call.
+bool tx_enabled();
+
 // Put the radio into sleep/standby. Reversible via begin().
 void stop();
 

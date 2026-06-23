@@ -181,7 +181,8 @@ class RLRConsole {
   static get PIPE_FIELDS() {
     return ['display_name','freq_hz','bw_hz','sf','cr','txp_dbm','batt_mult',
             'tele_interval_ms','lxmf_interval_ms','telemetry','lxmf','heartbeat',
-            'bt_enabled','bt_pin','latitude','longitude','altitude','log_level','collector'];
+            'bt_enabled','bt_pin','latitude','longitude','altitude','log_level','collector',
+            'tx_enabled'];
   }
 
   parsePipe(line) {
@@ -490,6 +491,7 @@ class RLRConsole {
     $('cfg-sf').value               = String(c.sf || '');
     $('cfg-cr').value               = String(c.cr || '');
     $('cfg-txp_dbm').value          = String(c.txp_dbm || '');
+    $('cfg-tx_enabled').checked     = Number(c.tx_enabled) === 1;
     $('cfg-tele_interval_min').value = c.tele_interval_ms ? Math.round(Number(c.tele_interval_ms) / 60000) : '';
     $('cfg-lxmf_interval_min').value = c.lxmf_interval_ms ? Math.round(Number(c.lxmf_interval_ms) / 60000) : '';
     $('cfg-telemetry').checked      = Number(c.telemetry) === 1;
@@ -561,6 +563,7 @@ class RLRConsole {
       sf:               $('cfg-sf').value,
       cr:               $('cfg-cr').value,
       txp_dbm:          $('cfg-txp_dbm').value,
+      tx_enabled:       $('cfg-tx_enabled').checked ? '1' : '0',
       tele_interval_ms: $('cfg-tele_interval_min').value ? String(Math.round(parseFloat($('cfg-tele_interval_min').value) * 60000)) : '',
       lxmf_interval_ms: $('cfg-lxmf_interval_min').value ? String(Math.round(parseFloat($('cfg-lxmf_interval_min').value) * 60000)) : '',
       telemetry:        $('cfg-telemetry').checked ? '1' : '0',
@@ -760,6 +763,7 @@ class RLRConsole {
       sf:               parseInt($('cfg-sf').value) || 0,
       cr:               parseInt($('cfg-cr').value) || 0,
       txp_dbm:          parseInt($('cfg-txp_dbm').value) || 0,
+      tx_enabled:       $('cfg-tx_enabled').checked,
       tele_interval_min: parseFloat($('cfg-tele_interval_min').value) || 0,
       lxmf_interval_min: parseFloat($('cfg-lxmf_interval_min').value) || 0,
       telemetry:        $('cfg-telemetry').checked,
@@ -803,6 +807,7 @@ class RLRConsole {
       if (cfg.sf !== undefined)                $('cfg-sf').value               = String(cfg.sf);
       if (cfg.cr !== undefined)                $('cfg-cr').value               = String(cfg.cr);
       if (cfg.txp_dbm !== undefined)           $('cfg-txp_dbm').value          = cfg.txp_dbm;
+      if (cfg.tx_enabled !== undefined)        $('cfg-tx_enabled').checked     = !!cfg.tx_enabled;
       if (cfg.tele_interval_min !== undefined)  $('cfg-tele_interval_min').value = cfg.tele_interval_min;
       if (cfg.lxmf_interval_min !== undefined)  $('cfg-lxmf_interval_min').value = cfg.lxmf_interval_min;
       if (cfg.telemetry !== undefined)         $('cfg-telemetry').checked      = !!cfg.telemetry;

@@ -94,6 +94,21 @@ void setup() {
     Serial.print("  txp: ");
     Serial.print(g_config.txp_dbm);
     Serial.println(" dBm");
+    Serial.print("  tx_enabled: ");
+    Serial.println(rlr::config::tx_enabled(g_config) ? "yes" : "no");
+    if (!rlr::config::tx_enabled(g_config)) {
+        // RX-only default (issue #4): a fresh-flashed device must not
+        // transmit until the operator picks a frequency that is legal in
+        // their region and explicitly enables TX.
+        Serial.println("***********************************************************");
+        Serial.println("* TX DISABLED — this device is RECEIVE-ONLY.              *");
+        Serial.println("* Set a frequency legal in your region, then enable TX:   *");
+        Serial.println("*   CONFIG SET freq_hz <hz>                               *");
+        Serial.println("*   CONFIG SET tx_enabled 1                               *");
+        Serial.println("*   CONFIG COMMIT                                         *");
+        Serial.println("* (or use the web flasher config form).                   *");
+        Serial.println("***********************************************************");
+    }
 
     // --- BLE (before radio — available even if radio fails) ---
     rlr::ble::init(g_config);
