@@ -24,7 +24,7 @@ Liveness check.
 Example: `reticulum-lora-repeater 0.1.0 Faketec`
 
 ### `STATUS`
-→ `uptime=<s> radio=<0|1> paths=<n> dsts=<n> sram_free=<bytes> batt_mv=<mV>`
+→ `uptime=<s> radio=<0|1> tx=<enabled|disabled> paths=<n> dsts=<n> sram_free=<bytes> batt_mv=<mV>`
 → `OK`
 
 One-shot live status for the webflasher post-provision verification.
@@ -62,6 +62,7 @@ Valid keys:
 | `sf` | uint8 | 7 – 12 |
 | `cr` | uint8 | 5 – 8 (denominator of 4/5..4/8) |
 | `txp_dbm` | int8 | -9 – +22 |
+| `tx_enabled` | bool | `0`/`1` — `0` = receive-only (fresh-flash default), `1` = transmit allowed |
 | `flags` | uint8 | bitmask; see Config.h |
 | `batt_mult` | float | 0.1 – 10.0 |
 | `tele_interval_ms` | uint32 | 60000 – 86400000 |

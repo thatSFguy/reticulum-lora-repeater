@@ -75,7 +75,12 @@ void defaults(Config& out) {
     out.sf               = DEFAULT_CONFIG_SF;
     out.cr               = DEFAULT_CONFIG_CR;
     out.txp_dbm          = DEFAULT_CONFIG_TXP_DBM;
-    out.flags            = CONFIG_FLAG_TELEMETRY | CONFIG_FLAG_LXMF | CONFIG_FLAG_HEARTBEAT;
+    // TX_DISABLED is set on fresh flash so the device boots RX-only
+    // until the operator confirms a region-legal frequency and enables
+    // TX (issue #4). Telemetry/LXMF/heartbeat stay armed but produce no
+    // emissions while TX is inhibited.
+    out.flags            = CONFIG_FLAG_TELEMETRY | CONFIG_FLAG_LXMF |
+                           CONFIG_FLAG_HEARTBEAT | CONFIG_FLAG_TX_DISABLED;
     out.batt_mult        = DEFAULT_CONFIG_BATT_MULT;
     out.tele_interval_ms = 10800000UL;   // 3 h
     out.lxmf_interval_ms = 1800000UL;    // 30 min
@@ -471,6 +476,15 @@ const char* set_field(Config& cfg, const char* key, const char* value) {
         else   cfg.flags &= ~bit;
         return nullptr;
     }
+    if (streq(key, "tx_enabled")) {
+        // Stored inverted in CONFIG_FLAG_TX_DISABLED: enabling TX clears
+        // the inhibit bit, disabling it sets the bit (issue #4).
+        bool b;
+        if (!parse_bool(value, b))           return "expected 0/1, true/false, on/off, yes/no";
+        if (b) cfg.flags &= ~CONFIG_FLAG_TX_DISABLED;
+        else   cfg.flags |=  CONFIG_FLAG_TX_DISABLED;
+        return nullptr;
+    }
     if (streq(key, "bt_pin")) {
         char* end = nullptr;
         unsigned long v = strtoul(value, &end, 10);
@@ -558,6 +572,7 @@ void print_fields(const Config& cfg, Print& out) {
     out.print("sf=");               out.println(cfg.sf);
     out.print("cr=");               out.println(cfg.cr);
     out.print("txp_dbm=");          out.println(cfg.txp_dbm);
+    out.print("tx_enabled=");       out.println(tx_enabled(cfg) ? 1 : 0);
     out.print("batt_mult=");        out.println(cfg.batt_mult, 4);
     out.print("tele_interval_ms="); out.println(cfg.tele_interval_ms);
     out.print("lxmf_interval_ms="); out.println(cfg.lxmf_interval_ms);
@@ -580,8 +595,10 @@ void print_fields_pipe(const Config& cfg, Print& out) {
     //
     // Field order: display_name|freq_hz|bw_hz|sf|cr|txp_dbm|batt_mult|
     //   tele_interval_ms|lxmf_interval_ms|telemetry|lxmf|heartbeat|
-    //   bt_enabled|bt_pin|latitude|longitude|altitude|log_level|collector
+    //   bt_enabled|bt_pin|latitude|longitude|altitude|log_level|collector|
+    //   tx_enabled
     // Must stay in lockstep with Ble.cpp keys[] and console.js PIPE_FIELDS.
+    // New fields are appended at the END to minimise version skew.
     out.print(cfg.display_name);       out.print('|');
     out.print(cfg.freq_hz);            out.print('|');
     out.print(cfg.bw_hz);              out.print('|');
@@ -600,7 +617,8 @@ void print_fields_pipe(const Config& cfg, Print& out) {
     out.print(cfg.longitude_udeg / 1000000.0, 6); out.print('|');
     out.print(cfg.altitude_m);         out.print('|');
     out.print(cfg.log_level);          out.print('|');
-    print_collector_hex(cfg, out);
+    print_collector_hex(cfg, out);     out.print('|');
+    out.print(tx_enabled(cfg) ? 1 : 0);
     // No println — caller may append more fields before the line ends.
 }
 

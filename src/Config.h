@@ -63,13 +63,28 @@ static_assert(sizeof(Config) <= 128, "Config grew unexpectedly — review schema
 
 // Flag bits
 enum : uint8_t {
-    CONFIG_FLAG_TELEMETRY  = 1 << 0,
-    CONFIG_FLAG_LXMF       = 1 << 1,
-    CONFIG_FLAG_HEARTBEAT  = 1 << 2,
-    CONFIG_FLAG_BT_ENABLED = 1 << 3,
+    CONFIG_FLAG_TELEMETRY   = 1 << 0,
+    CONFIG_FLAG_LXMF        = 1 << 1,
+    CONFIG_FLAG_HEARTBEAT   = 1 << 2,
+    CONFIG_FLAG_BT_ENABLED  = 1 << 3,
+    // bit 4: TX inhibit. Stored inverted so that a cleared bit means
+    // "transmit allowed" — this keeps already-configured devices in the
+    // field transmitting after an upgrade (their saved config has this
+    // bit clear), while a fresh flash gets the bit SET in defaults() and
+    // therefore boots RX-only until the operator confirms a legal
+    // frequency and enables TX. See issue #4 and config::tx_enabled().
+    CONFIG_FLAG_TX_DISABLED = 1 << 4,
 };
 
 namespace config {
+
+// True when transmission is permitted. Stored inverted (see
+// CONFIG_FLAG_TX_DISABLED): a fresh-flashed device boots RX-only and
+// only transmits once the operator has confirmed a region-legal
+// frequency and enabled TX.
+inline bool tx_enabled(const Config& cfg) {
+    return !(cfg.flags & CONFIG_FLAG_TX_DISABLED);
+}
 
 // Populate `out` with the board's hardcoded defaults from the
 // pre-included board header. Does NOT touch flash. Used on first boot
