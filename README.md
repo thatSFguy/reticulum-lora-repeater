@@ -49,7 +49,8 @@ change the display name, commit. Under 2 minutes per node after the first.
   also pushes spec-compliant LXMF telemetry (`FIELD_TELEMETRY`) — battery,
   uptime, heap, packet counters, and GPS location — to that collector,
   visible natively in Sideband / MeshChat's telemetry view (no custom
-  receiver needed).
+  receiver needed). To consume this telemetry in your own app, see
+  [`docs/TELEMETRY_INTEGRATION.md`](docs/TELEMETRY_INTEGRATION.md).
 - **Location-aware.** Configure latitude, longitude, and altitude (MSL)
   — included in the telemetry snapshot. Use the "Use my location" button
   in the webapp to auto-populate from your phone's GPS.
