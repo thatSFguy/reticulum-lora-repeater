@@ -73,9 +73,12 @@
 #define PIN_BATTERY             4     // P0.04
 #define BATTERY_ADC_RESOLUTION  12
 
-// LED — green LED on P1.03 (pin 35)
+// LED — green LED on P1.03 (pin 35). Active LOW: Meshtastic's T114
+// variant defines LED_STATE_ON 0, so the LED is lit when the pin is
+// driven LOW. Setting this to 1 left the pin LOW for "off", which
+// kept the green LED on constantly (issue #6).
 #define PIN_LED                 35    // P1.03
-#define LED_ACTIVE_HIGH         1
+#define LED_ACTIVE_HIGH         0
 
 // Button — P1.10 (pin 42)
 #define PIN_BUTTON              42
