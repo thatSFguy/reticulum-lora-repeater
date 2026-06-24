@@ -345,8 +345,12 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<script src="dfu.js"></script>
-<script src="flasher.js"></script>
-<script src="console.js"></script>
+<!-- ?v= cache-buster: bump this token whenever dfu.js / flasher.js /
+     console.js change so browsers fetch the new file instead of a stale
+     cached copy (GitHub Pages caches static assets and the filenames are
+     stable). Keep all three in lockstep. -->
+<script src="dfu.js?v=2"></script>
+<script src="flasher.js?v=2"></script>
+<script src="console.js?v=2"></script>
 </body>
 </html>

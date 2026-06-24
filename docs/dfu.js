@@ -189,7 +189,10 @@ const FLASH_PAGE_SIZE        = 4096;
 const FLASH_PAGE_ERASE_MS    = 89.7;
 const FLASH_PAGE_WRITE_MS    = 0.128;
 const DFU_PACKET_MAX_SIZE    = 512;
-const ACK_TIMEOUT_MS         = 1000;
+// 2.5 s, matching the agnostic-lora-net flasher. 1 s was too tight: on
+// some boards (RAK4631) a flash-page write during the DATA phase delays
+// the transport ack past 1 s, surfacing as "no ack for opcode 4".
+const ACK_TIMEOUT_MS         = 2500;
 
 class DfuTransport {
   constructor(port, logFn) {
@@ -339,16 +342,27 @@ class DfuTransport {
         ...u32le(DFU_DATA_PACKET),
         ...chunk,
       ];
-      await this.sendHciPacket(payload);
+      // Waiting for the per-packet ack is our flow control, but a missed
+      // ack mid-stream is NOT fatal — the Adafruit serial DFU is tolerant
+      // and keeps accepting data, so we pace and continue rather than
+      // aborting the whole flash. This mirrors the agnostic-lora-net
+      // flasher, whose send() ignores the ack result entirely. START and
+      // INIT still require an ack (sendStartDfu/sendInitPacket throw), so
+      // a wrong or dead bootloader port still fails fast up front.
+      try {
+        await this.sendHciPacket(payload);
+      } catch (e) {
+        if (!this._warnedAck) { this.log('info', 'data ack slow/missed — continuing (non-fatal)'); this._warnedAck = true; }
+      }
 
       sent = Math.min(i + chunk.length, total);
       chunkIdx++;
       if (onProgress) onProgress(sent, total);
 
-      // Match the Python reference: sleep briefly every 8 chunks so
-      // the flash-page write has time to settle. 0.128 ms is below JS
-      // timer resolution anyway, so `sleep(1)` is the practical floor.
-      if (chunkIdx % 8 === 0) await sleep(1);
+      // Pace the stream so the bootloader's flash-page write has time to
+      // settle and its USB receive buffer doesn't overrun. 5 ms every 8
+      // chunks matches the proven agnostic-lora-net flasher.
+      if (chunkIdx % 8 === 0) await sleep(5);
     }
     await sleep(1);
   }
