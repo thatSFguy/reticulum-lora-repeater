@@ -14,11 +14,12 @@ running a dedicated repeater without a toolchain install.
 ## Quick start
 
 1. Visit **https://thatSFguy.github.io/reticulum-lora-repeater/**
-2. Pick your **board** and **version**, click **Select firmware**
-3. **Double-tap the reset button** on the board to enter bootloader mode
-4. Click **Flash** and pick the new port that appears
-5. After flashing, click **Connect USB** or **Connect BLE** to open the console
-6. Edit your config (frequency, display name, TX power, location, etc.) and click **Commit & Reboot**
+2. On the **Flash** tab, pick your **board** and **version**, click **Connect & flash**
+3. Pick the board's USB port — it reboots itself into the bootloader
+   automatically (double-tap reset only if it doesn't), then click
+   **Select bootloader port & flash** and pick the new port
+4. After flashing, switch to the **Configure** tab, click **Connect USB** or **Connect BLE**
+5. Edit your config (frequency, display name, TX power, location, etc.) and click **Commit & Reboot**
 
 The node boots, starts relaying Reticulum packets over LoRa, and
 announces itself on the mesh.

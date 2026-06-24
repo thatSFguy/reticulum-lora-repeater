@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-24T15:55:24+00:00",
+  "generated_at": "2026-06-24T17:09:33+00:00",
   "releases": [
     {
       "tag": "v0.6.2",
@@ -7,6 +7,8 @@
       "boards": [
         {
           "name": "Faketec",
+          "dfu_json_path": "firmware/v0.6.2/reticulum-lora-repeater-Faketec-v0.6.2.dfu.json",
+          "dfu_json_size": 935919,
           "hex_path": "firmware/v0.6.2/reticulum-lora-repeater-Faketec-v0.6.2.hex",
           "hex_size": 1974237,
           "uf2_path": "firmware/v0.6.2/reticulum-lora-repeater-Faketec-v0.6.2.uf2",
@@ -16,6 +18,8 @@
         },
         {
           "name": "Heltec_T114",
+          "dfu_json_path": "firmware/v0.6.2/reticulum-lora-repeater-Heltec_T114-v0.6.2.dfu.json",
+          "dfu_json_size": 935715,
           "hex_path": "firmware/v0.6.2/reticulum-lora-repeater-Heltec_T114-v0.6.2.hex",
           "hex_size": 1973829,
           "uf2_path": "firmware/v0.6.2/reticulum-lora-repeater-Heltec_T114-v0.6.2.uf2",
@@ -25,6 +29,8 @@
         },
         {
           "name": "RAK3401",
+          "dfu_json_path": "firmware/v0.6.2/reticulum-lora-repeater-RAK3401-v0.6.2.dfu.json",
+          "dfu_json_size": 935619,
           "hex_path": "firmware/v0.6.2/reticulum-lora-repeater-RAK3401-v0.6.2.hex",
           "hex_size": 1973607,
           "uf2_path": "firmware/v0.6.2/reticulum-lora-repeater-RAK3401-v0.6.2.uf2",
@@ -34,6 +40,8 @@
         },
         {
           "name": "RAK4631",
+          "dfu_json_path": "firmware/v0.6.2/reticulum-lora-repeater-RAK4631-v0.6.2.dfu.json",
+          "dfu_json_size": 935599,
           "hex_path": "firmware/v0.6.2/reticulum-lora-repeater-RAK4631-v0.6.2.hex",
           "hex_size": 1973562,
           "uf2_path": "firmware/v0.6.2/reticulum-lora-repeater-RAK4631-v0.6.2.uf2",
@@ -42,7 +50,20 @@
           "zip_size": 702427
         },
         {
+          "name": "T-Echo",
+          "dfu_json_path": "firmware/v0.6.2/reticulum-lora-repeater-T-Echo-v0.6.2.dfu.json",
+          "dfu_json_size": 935587,
+          "hex_path": "firmware/v0.6.2/reticulum-lora-repeater-T-Echo-v0.6.2.hex",
+          "hex_size": 1973559,
+          "uf2_path": "firmware/v0.6.2/reticulum-lora-repeater-T-Echo-v0.6.2.uf2",
+          "uf2_size": 1403392,
+          "zip_path": "firmware/v0.6.2/reticulum-lora-repeater-T-Echo-v0.6.2.zip",
+          "zip_size": 702419
+        },
+        {
           "name": "XIAO_nRF52840",
+          "dfu_json_path": "firmware/v0.6.2/reticulum-lora-repeater-XIAO_nRF52840-v0.6.2.dfu.json",
+          "dfu_json_size": 936027,
           "hex_path": "firmware/v0.6.2/reticulum-lora-repeater-XIAO_nRF52840-v0.6.2.hex",
           "hex_size": 1974462,
           "uf2_path": "firmware/v0.6.2/reticulum-lora-repeater-XIAO_nRF52840-v0.6.2.uf2",
@@ -91,6 +112,15 @@
           "uf2_size": 1403392,
           "zip_path": "firmware/v0.6.1/reticulum-lora-repeater-RAK4631-v0.6.1.zip",
           "zip_size": 702427
+        },
+        {
+          "name": "T-Echo",
+          "hex_path": "firmware/v0.6.1/reticulum-lora-repeater-T-Echo-v0.6.1.hex",
+          "hex_size": 1973559,
+          "uf2_path": "firmware/v0.6.1/reticulum-lora-repeater-T-Echo-v0.6.1.uf2",
+          "uf2_size": 1403392,
+          "zip_path": "firmware/v0.6.1/reticulum-lora-repeater-T-Echo-v0.6.1.zip",
+          "zip_size": 702419
         },
         {
           "name": "XIAO_nRF52840",
@@ -142,6 +172,15 @@
           "uf2_size": 1401856,
           "zip_path": "firmware/v0.6.0/reticulum-lora-repeater-RAK4631-v0.6.0.zip",
           "zip_size": 701515
+        },
+        {
+          "name": "T-Echo",
+          "hex_path": "firmware/v0.6.0/reticulum-lora-repeater-T-Echo-v0.6.0.hex",
+          "hex_size": 1970981,
+          "uf2_path": "firmware/v0.6.0/reticulum-lora-repeater-T-Echo-v0.6.0.uf2",
+          "uf2_size": 1401856,
+          "zip_path": "firmware/v0.6.0/reticulum-lora-repeater-T-Echo-v0.6.0.zip",
+          "zip_size": 701506
         },
         {
           "name": "XIAO_nRF52840",

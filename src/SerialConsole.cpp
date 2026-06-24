@@ -23,6 +23,7 @@
 #include "Telemetry.h"
 #include "LxmfPresence.h"
 #include "Led.h"
+#include "Ble.h"
 
 #include <Arduino.h>
 #include <nrf_soc.h>
@@ -161,8 +162,28 @@ static void cmd_dfu(Print& out) {
     ok(out);
     out.flush();
     delay(50);
-    // Adafruit bootloader magic: GPREGRET = 0x57 means "enter DFU on next boot"
-    sd_power_gpregret_set(0, 0x57);
+    // Adafruit nRF52 bootloader magic. 0x4E = DFU_MAGIC_SERIAL_ONLY_RESET:
+    // reboot straight into the *serial* DFU bootloader (the CDC port the
+    // web flasher's HCI/SLIP protocol speaks) without mounting the UF2
+    // mass-storage drive. This is what makes one-click flashing reliable
+    // from the webflasher — no spurious "removable drive" popup that can
+    // lock the CDC on Windows. (0x57 = DFU_MAGIC_UF2_RESET, the drag-drop
+    // drive path, is still reachable by double-tapping the reset button.)
+    //
+    // GPREGRET is a SoftDevice-protected register: when the SoftDevice is
+    // running you MUST set it through the sd_* SVC API (a direct write
+    // faults). But the SoftDevice is only enabled when Bluetooth is on,
+    // and devices ship with BT OFF by default — in which case sd_power_*
+    // silently no-ops and the magic never lands, so the board just reboots
+    // back into the app. So branch on whether BLE is actually up: SVC API
+    // when it is, raw register write when it isn't.
+    const uint8_t DFU_SERIAL_MAGIC = 0x4E;
+    if (rlr::ble::active()) {
+        sd_power_gpregret_clr(0, 0xFF);
+        sd_power_gpregret_set(0, DFU_SERIAL_MAGIC);
+    } else {
+        NRF_POWER->GPREGRET = DFU_SERIAL_MAGIC;
+    }
     NVIC_SystemReset();
 }
 

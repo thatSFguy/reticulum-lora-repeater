@@ -199,7 +199,26 @@ The Adafruit nRF52 bootloader exposes two distinct CDC devices:
 - **Bootloader CDC** — a different CDC device that appears only when
   the bootloader is running, speaks the HCI DFU protocol above.
 
-To enter bootloader mode, **double-tap the reset button within ~500 ms**.
-The onboard LED typically pulses and the USB device re-enumerates with
-a different VID/PID pair. The user must then re-select that new port
-in the browser's Web Serial port picker before flashing.
+The web flasher enters the bootloader automatically, most-reliable-first:
+
+1. **`DFU` console command** — for a board already running our firmware,
+   the flasher sends `DFU` on the application CDC. The firmware
+   (`src/SerialConsole.cpp` `cmd_dfu`) writes the Adafruit GPREGRET magic
+   `0x4E` (`DFU_MAGIC_SERIAL_ONLY_RESET`) and `NVIC_SystemReset()`s, so the
+   board comes back up in the *serial* DFU bootloader — no UF2 mass-storage
+   drive, no host DTR timing to get wrong.
+2. **1200-baud touch** — fallback for firmware that predates the `DFU`
+   command: open the CDC at 1200 bps, drop DTR/RTS, close. The bootloader
+   treats that as the reboot-to-DFU signal.
+3. **Manual double-tap reset within ~500 ms** — always works; forces the
+   UF2/serial bootloader regardless of firmware state.
+
+After any of these the USB device re-enumerates with a different VID/PID
+pair, and the user re-selects that new port in the Web Serial picker
+before flashing.
+
+The firmware bytes themselves come from a pre-extracted **`.dfu.json`**
+(base64 application + hex init packet) emitted by `scripts/mk_dfu_json.py`
+so the browser never has to unzip the `firmware.zip` client-side. See
+`DfuPackage.fromDfuJson()` in `docs/dfu.js`. Older releases that predate
+that asset fall back to fetching the `.zip` and unzipping with JSZip.

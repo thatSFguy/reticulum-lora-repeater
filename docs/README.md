@@ -24,10 +24,21 @@ matrix.
 
 ### 1. Flash a new board
 
-1. Pick a **version** and **board** from the dropdowns, click **Select firmware**
-2. **Double-tap the reset button** on the board (within ~500 ms) to enter bootloader mode
-3. Click **Flash** and pick the new bootloader port in the picker
-4. Wait for the progress bar (~15 seconds)
+On the **Flash** tab (a 3-step wizard):
+
+1. Pick a **version** and **board**, then click **Connect & flash**
+2. Pick the board's current USB port. If it's already running our
+   firmware, it reboots itself into the bootloader automatically (via the
+   `DFU` console command, with a 1200-baud touch as fallback) — no button
+   presses. A brand-new board ships in its bootloader already: tick
+   **board is already in bootloader mode** and you skip straight to step 3.
+3. Click **Select bootloader port & flash** and pick the new port that
+   appeared; wait for the progress bar (~15 seconds)
+
+If the board doesn't reboot on its own, **double-tap its reset button**
+(within ~500 ms) to force the bootloader, then click *Select bootloader
+port & flash*. A **Download UF2** button is offered for drag-and-drop
+flashing as a last resort.
 
 ### 2. Configure after flashing
 
