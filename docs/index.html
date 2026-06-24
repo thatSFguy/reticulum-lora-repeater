@@ -22,10 +22,11 @@
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: -apple-system, "Segoe UI", Roboto, sans-serif; }
   body { max-width: 960px; margin: 0 auto; padding: 24px 20px 80px; }
-  header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
   h1 { font-size: 20px; margin: 0; font-weight: 600; }
   h1 small { color: var(--muted); font-weight: 400; font-size: 13px; display: block; margin-top: 2px; }
   h2 { font-size: 15px; margin: 0 0 14px 0; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; }
+  h3 { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin: 16px 0 8px; }
   .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 18px 20px; margin-bottom: 16px; }
   .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   .row + .row { margin-top: 10px; }
@@ -47,28 +48,40 @@
   button.secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
   button.secondary:hover { background: #272c3a; }
   button.danger { background: var(--err); color: #2a0808; }
+  /* tab nav */
+  nav.tabs { display: flex; gap: 6px; }
+  nav.tabs button { background: var(--panel-2); border: 1px solid var(--border); color: var(--muted); font-weight: 500; }
+  nav.tabs button.on { background: #21304a; color: var(--text); border-color: var(--accent); }
+  /* wizard step indicator */
+  .steps { display: flex; gap: 6px; margin: 0 0 18px; }
+  .steps div { flex: 1; text-align: center; font-size: 12px; color: var(--muted); padding: 6px 4px; border-bottom: 2px solid var(--border); text-transform: uppercase; letter-spacing: 0.4px; }
+  .steps div.on { color: var(--accent); border-color: var(--accent); }
+  .steps div.done { color: var(--ok); border-color: var(--ok); }
+  .pill { display: inline-block; padding: 3px 10px; border-radius: 11px; font-size: 12px; background: var(--panel-2); color: var(--muted); font-family: var(--mono); }
+  .pill.ok { color: var(--ok); } .pill.bad { color: var(--err); } .pill.warn { color: var(--warn); }
   .status-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #555; margin-right: 6px; vertical-align: middle; }
   .status-dot.on { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
   .status-dot.err { background: var(--err); }
   .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 18px; font-family: var(--mono); font-size: 13px; }
   .kv dt { color: var(--muted); }
   .kv dd { margin: 0; color: var(--text); }
-  #log { background: #0a0c10; border: 1px solid var(--border); border-radius: 5px; padding: 10px 12px; font-family: var(--mono); font-size: 12px; color: #c6cbd6; max-height: 220px; overflow-y: auto; white-space: pre-wrap; }
-  #log .tx { color: var(--accent); }
-  #log .ok { color: var(--ok); }
-  #log .err { color: var(--err); }
-  #log .info { color: var(--muted); }
+  #log, #flash-log { background: #0a0c10; border: 1px solid var(--border); border-radius: 5px; padding: 10px 12px; font-family: var(--mono); font-size: 12px; color: #c6cbd6; max-height: 220px; overflow-y: auto; white-space: pre-wrap; }
+  #log .tx, #flash-log .tx { color: var(--accent); }
+  #log .ok, #flash-log .ok { color: var(--ok); }
+  #log .err, #flash-log .err { color: var(--err); }
+  #log .info, #flash-log .info { color: var(--muted); }
   .progress { background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; height: 10px; overflow: hidden; margin-top: 8px; }
   .progress > div { background: var(--accent); height: 100%; width: 0%; transition: width 0.1s linear; }
   .stage-label { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: 6px; min-height: 16px; }
   .file-drop { display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--panel-2); border: 1px dashed var(--border); border-radius: 5px; }
   .file-drop input[type="file"] { flex: 1; color: var(--muted); font-size: 13px; }
-  .file-drop span { font-family: var(--mono); font-size: 12px; color: var(--muted); }
   .notice { background: #1b2233; border-left: 3px solid var(--warn); padding: 10px 14px; font-size: 13px; color: #d8dde8; border-radius: 4px; margin: 10px 0; }
   .notice.err { border-left-color: var(--err); }
   .notice.ok { border-left-color: var(--ok); }
   .hidden { display: none !important; }
   .actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+  .hint { color: var(--muted); font-size: 13px; margin: 4px 0 12px; }
+  code { background: var(--panel-2); padding: 1px 6px; border-radius: 5px; font-size: 12px; font-family: var(--mono); }
   a { color: var(--accent); }
 </style>
 </head>
@@ -78,6 +91,10 @@
   <h1>Reticulum LoRa Repeater
     <small>Flash firmware and configure your node over USB or Bluetooth</small>
   </h1>
+  <nav class="tabs">
+    <button id="nav-flash" class="on" onclick="showTab('flash')">Flash</button>
+    <button id="nav-configure" class="secondary" onclick="showTab('configure')">Configure</button>
+  </nav>
 </header>
 
 <div id="unsupported" class="notice err hidden">
@@ -91,71 +108,90 @@
   Open this page over <code>https://</code> or from <code>http://localhost</code>.
 </div>
 
-<div class="panel">
-  <h2>What this does</h2>
-  <p style="margin: 0; color: var(--muted); font-size: 13px;">
-    Flash the Reticulum LoRa Repeater firmware onto a fresh board
-    straight from this page, then connect over USB to read its live
-    status, edit the persistent Config, and calibrate the battery ADC
-    from a multimeter reading. Nothing touches flash until you click
-    a Commit or Flash button.
-  </p>
-</div>
+<!-- ============================ FLASH (wizard) ============================ -->
+<section id="tab-flash">
+  <div class="steps">
+    <div id="st-1" class="on">1 · Board</div>
+    <div id="st-2">2 · Flash</div>
+    <div id="st-3">3 · Done</div>
+  </div>
 
-<div class="panel">
-  <h2>Flash firmware</h2>
-  <p style="margin: 0 0 12px 0; color: var(--muted); font-size: 13px;">
-    Pick a version below and click <strong>Select firmware</strong>.
-    Then put the board in bootloader mode by
-    <strong>double-tapping the reset button</strong> on the board
-    (within ~500&nbsp;ms) — the device will re-enumerate as a new
-    USB serial port. Click <strong>Flash</strong> and pick that new
-    port in the browser's picker.
-  </p>
-  <div class="row">
-    <div class="field"><label>Version</label>
-      <select id="rel-version" disabled><option>loading releases…</option></select></div>
-    <div class="field narrow"><label>Board</label>
-      <select id="rel-board" disabled></select></div>
-    <div>
-      <!-- The &nbsp; label is a vertical spacer so the button sits
-           at the same y-position as the selects do below their
-           labels. Without it the flex row center-aligns the button
-           and it visibly floats above the dropdown baselines. -->
-      <label>&nbsp;</label>
-      <button id="btn-load-release" class="secondary" disabled>Select firmware</button>
+  <!-- step 1 -->
+  <div class="panel" id="flash-step1">
+    <h2>What are you flashing?</h2>
+    <p class="hint">
+      Pick a release and your board, then click <strong>Connect&nbsp;&amp;&nbsp;flash</strong>.
+      A board already running our firmware is rebooted into its bootloader
+      automatically (no button presses). Brand-new boards ship in their
+      bootloader already — tick the box below.
+    </p>
+    <div class="row">
+      <div class="field"><label>Version</label>
+        <select id="fl-version" disabled><option>loading…</option></select></div>
+      <div class="field narrow"><label>Board</label>
+        <select id="fl-board" disabled></select></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <label style="display:inline; text-transform:none; font-size:13px; color:var(--text);">
+        <input type="checkbox" id="fl-isboot"> board is already in bootloader mode (new board, or I just double-tapped reset)
+      </label>
+    </div>
+    <div id="fl-rel-status" class="stage-label"></div>
+    <div class="actions">
+      <button id="fl-start">Connect &amp; flash →</button>
+    </div>
+    <details style="margin-top: 14px;">
+      <summary style="cursor: pointer; color: var(--muted); font-size: 12px;">Or upload a local firmware.zip (for developers building their own)</summary>
+      <div class="file-drop" style="margin-top: 8px;">
+        <input id="fl-file" type="file" accept=".zip,application/zip">
+      </div>
+    </details>
+  </div>
+
+  <!-- step 2 -->
+  <div class="panel hidden" id="flash-step2">
+    <h2>Flashing <span id="fl-board-name"></span></h2>
+    <div id="fl-state" class="pill">starting…</div>
+    <div class="progress"><div id="fl-progress"></div></div>
+    <div class="actions">
+      <button id="fl-flash-now" class="hidden">Select bootloader port &amp; flash</button>
+    </div>
+    <div id="fl-uf2-fallback" class="hidden" style="margin-top:14px">
+      <h3>Trouble? Manual flashing</h3>
+      <p class="hint">
+        If the board didn't reboot on its own, <strong>double-tap its reset button</strong>
+        (within ~500&nbsp;ms) to force the bootloader, then click
+        <em>Select bootloader port &amp; flash</em> and pick the new port.
+        Or download the UF2 and drag it onto the board's bootloader USB
+        drive (XIAOBOOT / NICENANO / FTHR840BOOT).
+      </p>
+      <div class="actions">
+        <button id="fl-dl-uf2" class="secondary" disabled>Download UF2</button>
+      </div>
+    </div>
+    <h3>Log</h3>
+    <div id="flash-log"></div>
+  </div>
+
+  <!-- step 3 -->
+  <div class="panel hidden" id="flash-step3">
+    <div class="notice ok">
+      <strong>✓ Flashed.</strong> The board is rebooting into the new firmware.
+      Switch to the <a href="#" onclick="showTab('configure');return false;">Configure</a>
+      tab to connect over USB/BLE and set it up.
+    </div>
+    <div class="actions">
+      <button id="fl-restart" class="secondary">Flash another board</button>
+      <button onclick="showTab('configure')">Configure this board →</button>
     </div>
   </div>
-  <div id="rel-status" class="stage-label"></div>
+</section>
 
-  <details style="margin-top: 14px;">
-    <summary style="cursor: pointer; color: var(--muted); font-size: 12px;">Or upload a local firmware.zip (for developers building their own)</summary>
-    <div class="file-drop" style="margin-top: 8px;">
-      <input id="fw-file" type="file" accept=".zip,application/zip">
-    </div>
-  </details>
-
-  <div id="fw-info" class="stage-label" style="margin-top: 14px;">no firmware loaded</div>
-  <div class="actions">
-    <!-- btn-dfu is hidden for now: the 1200-baud touch doesn't
-         reliably put the Faketec into bootloader mode, same issue
-         as flasher.meshcore.dev. The JS handler in console.js is
-         still wired so we can un-hide it later once we've worked
-         out the touch quirk. For now the reset-button fallback is
-         the documented path. -->
-    <button id="btn-dfu" class="secondary" style="display: none;" disabled>Enter DFU mode</button>
-    <button id="btn-flash" disabled>Flash (DFU)</button>
-    <button id="btn-download-uf2" class="secondary" disabled>Download UF2</button>
-    <span style="color: var(--muted); font-size: 12px; align-self: center;">
-      DFU: double-tap reset, pick bootloader port. UF2: double-tap reset, drag file to XIAOBOOT/NICENANO drive.
-    </span>
-  </div>
-  <div class="progress"><div id="fw-progress-bar"></div></div>
-  <div id="fw-stage" class="stage-label"></div>
-</div>
+<!-- ============================ CONFIGURE ============================ -->
+<section id="tab-configure" class="hidden">
 
 <div class="panel">
-  <h2>Configure</h2>
+  <h2>Connect</h2>
   <p style="margin: 0 0 12px 0; color: var(--muted); font-size: 13px;">
     After flashing, connect to the running application port (not the
     bootloader) to read status, edit config, and calibrate the battery.
@@ -305,10 +341,12 @@
   </div>
 
 </div>
+</section>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="dfu.js"></script>
+<script src="flasher.js"></script>
 <script src="console.js"></script>
 </body>
 </html>

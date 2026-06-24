@@ -149,6 +149,31 @@ class DfuPackage {
     const buf = await file.arrayBuffer();
     return DfuPackage.fromArrayBuffer(buf);
   }
+
+  // Build a package from the pre-extracted .dfu.json our CI emits
+  // (scripts/mk_dfu_json.py). This is the primary path for the
+  // webflasher: the browser fetches one small JSON instead of pulling
+  // the whole firmware.zip and running JSZip/DEFLATE client-side.
+  //   { fw_bin_b64, init_dat_hex, app_size, dfu_version }
+  static fromDfuJson(obj) {
+    if (!obj || typeof obj.fw_bin_b64 !== 'string' || typeof obj.init_dat_hex !== 'string') {
+      throw new Error('malformed .dfu.json (missing fw_bin_b64 / init_dat_hex)');
+    }
+    const bin = atob(obj.fw_bin_b64);
+    const firmware = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) firmware[i] = bin.charCodeAt(i);
+
+    const hex = obj.init_dat_hex;
+    if (hex.length % 2 !== 0) throw new Error('init_dat_hex has odd length');
+    const initPacket = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < initPacket.length; i++) initPacket[i] = parseInt(hex.substr(i * 2, 2), 16);
+
+    const pkg = new DfuPackage();
+    pkg.firmware   = firmware;
+    pkg.initPacket = initPacket;
+    pkg.manifest   = { manifest: { dfu_version: obj.dfu_version || null } };
+    return pkg;
+  }
 }
 
 // ---------------------------------------------------------------
@@ -381,6 +406,67 @@ async function dfuFlash(port, dfuPackage, { onStage, onProgress, log } = {}) {
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+// ---------------------------------------------------------------
+//  Bootloader entry helpers (used by flasher.js)
+// ---------------------------------------------------------------
+
+// 1200-baud "touch": open the app's CDC at 1200 bps, drop DTR/RTS, and
+// close. The Adafruit nRF52 bootloader treats this as the signal to
+// reboot into DFU on the next power-up — the same trick Arduino IDE and
+// adafruit-nrfutil --touch 1200 use. Best-effort: swallows errors so a
+// platform without setSignals (or a port that's already the bootloader)
+// doesn't abort the caller. `port` must be a SerialPort that is NOT
+// currently open.
+async function dfuTouch1200(port, { log = () => {} } = {}) {
+  let opened = false;
+  // open() can transiently fail right after another close() on Windows —
+  // a short retry wins that race.
+  for (let i = 0; i < 5 && !opened; i++) {
+    try { await port.open({ baudRate: 1200 }); opened = true; }
+    catch (e) { if (i === 4) throw e; await sleep(150); }
+  }
+  try {
+    await port.setSignals({ dataTerminalReady: false, requestToSend: false });
+  } catch (e) {
+    log('info', 'setSignals unsupported (ignored): ' + e.message);
+  }
+  // Hold long enough for the host USB driver to push SET_LINE_CODING(1200)
+  // + DTR-low to the device; ~250 ms matches Arduino IDE / ESP Web Tools.
+  await sleep(250);
+  try { await port.close(); } catch (e) {}
+}
+
+// Send the firmware's own `DFU` console command on an already-open app
+// port. The firmware (src/SerialConsole.cpp cmd_dfu) sets the Adafruit
+// GPREGRET serial-DFU magic and resets — far more reliable than the
+// 1200-baud touch because it doesn't depend on host DTR timing. Returns
+// true if the firmware acknowledged before resetting.
+async function dfuCommandReboot(port, { log = () => {} } = {}) {
+  const writer = port.writable.getWriter();
+  const reader = port.readable.getReader();
+  const decoder = new TextDecoder();
+  let acked = false;
+  try {
+    await writer.write(new TextEncoder().encode('DFU\n'));
+    const deadline = Date.now() + 1500;
+    let buf = '';
+    while (Date.now() < deadline) {
+      const { value, done } = await Promise.race([
+        reader.read(),
+        sleep(Math.max(50, deadline - Date.now())).then(() => ({ value: null, done: false })),
+      ]);
+      if (done) break;
+      if (!value) break;
+      buf += decoder.decode(value, { stream: true });
+      if (/entering DFU|^OK$/im.test(buf)) { acked = true; log('ok', 'firmware acknowledged DFU command'); break; }
+    }
+  } finally {
+    try { reader.releaseLock(); } catch (e) {}
+    try { writer.releaseLock(); } catch (e) {}
+  }
+  return acked;
+}
+
 // Expose to the browser global scope for index.html's inline script.
 window.RLRDfu = {
   dfuFlash,
@@ -389,4 +475,7 @@ window.RLRDfu = {
   crc16,
   slipEscape,
   slipUnescape,
+  dfuTouch1200,
+  dfuCommandReboot,
+  sleep,
 };

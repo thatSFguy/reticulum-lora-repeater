@@ -176,6 +176,22 @@ jobs:
           echo "Release assets staged:"
           ls -la release-assets/
 
+      - name: Pre-extract serial-DFU payloads (.dfu.json) for the webflasher
+        run: |
+          set -euo pipefail
+          # One self-contained JSON per board (base64 app + hex init packet)
+          # so the in-browser flasher streams firmware without unzipping
+          # client-side. These land in release-assets/ so they're attached
+          # to the Release (gh release create globs the dir) AND copied into
+          # docs/firmware/<tag>/ by the staging step below. See
+          # scripts/mk_dfu_json.py and docs/dfu.js (DfuPackage.fromDfuJson).
+          for z in release-assets/*.zip; do
+            base="$(basename "$z" .zip)"
+            python scripts/mk_dfu_json.py "$z" "release-assets/${base}.dfu.json"
+          done
+          echo "After .dfu.json generation:"
+          ls -la release-assets/
+
       - name: Delete existing Release for a clean slate
         run: |
           # Idempotent: exits 0 even if no release exists yet (first

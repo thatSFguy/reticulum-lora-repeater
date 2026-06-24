@@ -22,12 +22,20 @@ Output schema:
         "prerelease": false,          # true iff tag contains a '-'
         "boards": [
           {
-            "name":     "Faketec",
-            "zip_path": "firmware/v0.1.0/reticulum-lora-repeater-Faketec-v0.1.0.zip",
-            "zip_size": 621463,
-            "hex_path": "firmware/v0.1.0/reticulum-lora-repeater-Faketec-v0.1.0.hex",
-            "hex_size": 1785344
+            "name":          "Faketec",
+            "zip_path":      "firmware/v0.1.0/reticulum-lora-repeater-Faketec-v0.1.0.zip",
+            "zip_size":      621463,
+            "hex_path":      "firmware/v0.1.0/reticulum-lora-repeater-Faketec-v0.1.0.hex",
+            "hex_size":      1785344,
+            "dfu_json_path": "firmware/v0.1.0/reticulum-lora-repeater-Faketec-v0.1.0.dfu.json",
+            "dfu_json_size": 985321
           }
+
+`dfu_json_*` (when present) points at the pre-extracted serial-DFU
+payload the webflasher streams directly — see scripts/mk_dfu_json.py.
+`uf2_*` is present for UF2-bootloader boards. Older releases predate
+the .dfu.json asset and only carry zip/hex/uf2; the flasher falls back
+to unzipping the .zip in-browser for those.
         ]
       }
     ]
@@ -51,8 +59,16 @@ from pathlib import Path
 REPO_ROOT       = Path(__file__).resolve().parents[1]
 FIRMWARE_ROOT   = REPO_ROOT / "docs" / "firmware"
 MANIFEST_PATH   = FIRMWARE_ROOT / "manifest.json"
+# Board names can contain hyphens (e.g. "T-Echo"), so we can't anchor the
+# board group on "no hyphens". Instead pin the TAG to a version shape
+# (v<major>.<minor>.<patch> with an optional prerelease suffix) and let the
+# board group greedily take everything before it — the regex engine
+# backtracks to the right split. `dfu.json` carries a dot, so it's listed
+# explicitly in the extension alternation.
 ASSET_RE        = re.compile(
-    r"^reticulum-lora-repeater-(?P<board>[^-]+)-(?P<tag>v.+)\.(?P<ext>zip|hex|uf2)$"
+    r"^reticulum-lora-repeater-(?P<board>.+)-"
+    r"(?P<tag>v\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)\."
+    r"(?P<ext>zip|hex|uf2|dfu\.json)$"
 )
 
 
@@ -104,7 +120,9 @@ def scan_releases(firmware_root: Path) -> list[dict]:
                 )
                 continue
             rec = by_board.setdefault(board, {"name": board})
-            ext = m.group("ext")
+            # "dfu.json" -> "dfu_json" so it yields valid JSON keys
+            # (dfu_json_path / dfu_json_size).
+            ext = m.group("ext").replace(".", "_")
             rec[f"{ext}_path"] = f"firmware/{tag}/{asset.name}"
             rec[f"{ext}_size"] = asset.stat().st_size
 
