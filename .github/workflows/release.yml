@@ -27,14 +27,6 @@ on:
 permissions:
   contents: write      # softprops/action-gh-release needs to create/update releases
 
-# Opt into Node.js 24 for JavaScript-based actions now rather than
-# waiting for GitHub's June 2026 forced migration. Silences the
-# "Node.js 20 actions are deprecated" warning and future-proofs the
-# workflow without requiring us to pin to unreleased action versions.
-# See https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   build:
     name: Build ${{ matrix.board }}
@@ -53,15 +45,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
       - name: Cache PlatformIO toolchains and libraries
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/pip
@@ -111,7 +103,7 @@ jobs:
       # are useful for pre-release smoke testing without touching
       # Releases.
       - name: Upload workflow artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: firmware-${{ matrix.board }}-${{ steps.stage.outputs.version }}
           path: release-assets/*
@@ -144,22 +136,21 @@ jobs:
     permissions:
       contents: write
     env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout master (we commit docs/firmware/ back to master)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: master
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
       - name: Download all board artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: downloaded-artifacts
           pattern: firmware-*
