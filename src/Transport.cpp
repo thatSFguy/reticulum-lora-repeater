@@ -34,6 +34,12 @@
 // before Transport::init(). Transport now assumes the filesystem is
 // already mounted + registered by the time init() is called.
 
+// Maximum number of learned paths kept in the in-RAM path table.
+// Overridable per-board via -DURTN_PATH_TABLE_MAX_RECS in platformio.ini.
+#ifndef URTN_PATH_TABLE_MAX_RECS
+#define URTN_PATH_TABLE_MAX_RECS 100
+#endif
+
 // Exposed counters — declared early so the LoRaInterface class below
 // can increment them. Read via transport::packets_in/out().
 static uint32_t s_packets_in  = 0;
@@ -162,6 +168,18 @@ bool init(const Config& cfg) {
     s_reticulum.transport_enabled(true);
     s_reticulum.probe_destination_enabled(true);
     s_reticulum.start();
+
+    // Hard-cap the path table size. With path persistence disabled
+    // (no -DRNS_PERSIST_PATHS — see platformio.ini), learned paths
+    // live in the RNS heap pool via microStore's HeapStore. Its only
+    // automatic eviction is per-entry TTL (DESTINATION_TIMEOUT = 1 day),
+    // so without a record-count cap a busy mesh would accumulate every
+    // distinct destination seen in a 24 h window and eventually exhaust
+    // the heap pool. path_table_maxsize() forwards to set_max_recs() on
+    // the store, which evicts the oldest entry once the count is hit.
+    // (The legacy cull_path_table() job operates on a map that is no
+    // longer populated, so this is the only thing that bounds the table.)
+    RNS::Transport::path_table_maxsize(URTN_PATH_TABLE_MAX_RECS);
 
     RNS::Utilities::OS::set_loop_callback([]() {});
 
